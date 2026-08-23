@@ -12,6 +12,5 @@ El modelo también contempla la gestión del pago mediante las entidades **`pay`
 
 En conjunto, este modelo busca proporcionar una estructura que permita **registrar, consultar y controlar el ciclo de vida de una factura**, manteniendo separadas las responsabilidades de cada entidad y facilitando su implementación dentro de una arquitectura de servicios distribuidos.
 
-<img src="images/invoicing_diagram.png">
-
+![texto alternativo](images/invoicing_diagram.png)
 link drawbd: https://www.drawdb.app/share/adGdxaZHbCbYPSKwt8CdRAVN
