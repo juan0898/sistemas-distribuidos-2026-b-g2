@@ -50,6 +50,6 @@
 
 ## 6. Evidence links
 
-* Billing data model diagram: `images/invoicing_diagram.png`
+![Billing data model diagram](images/invoicing_diagram.png)
 * DrawDB model: https://www.drawdb.app/share/adGdxaZHbCbYPSKwt8CdRAVN
 
