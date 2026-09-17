@@ -30,8 +30,8 @@ automatically). Create your profile repo `username/username` with a CONFIG block
 
 ```
 <!-- CONFIG
-FULL_NAME: Your Full Name
-GITHUB_USER: your-github-user
+FULL_NAME: Juan Diego Mora Alvarado
+GITHUB_USER: juan0898
 -->
 ```
 
