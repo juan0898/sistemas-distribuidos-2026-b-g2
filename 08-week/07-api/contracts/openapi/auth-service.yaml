@@ -1,0 +1,1151 @@
+openapi: 3.0.3
+info:
+  title: Auth API
+  version: 1.0.0
+  description: Contract design for the internal Di Lucca MVP. Based on the professor service template, ADR-003 and
+    approved domain rules. Not implementation or deployment evidence. See ../../design-decisions.md and ../../authentication.md.
+servers:
+- url: /api/v1
+  description: Gateway-facing relative base URL; same prefix locally and remotely.
+security:
+- bearerAuth: []
+tags:
+- name: Auth
+  description: Operations owned by this context.
+paths:
+  /auth/register:
+    post:
+      summary: Register staff
+      operationId: AuthRegisterstaff
+      tags:
+      - Auth
+      description: Administrator creates DENTIST or SECRETARY_ASSISTANT only. No patient or additional Administrator
+        account. Initial state PENDING_VERIFICATION; no session tokens returned. Location identifies the created
+        resource; operational routing must preserve the Gateway-facing URL.
+      x-roles: &id003
+      - ADMINISTRATOR
+      x-requirements:
+      - HU-IAM-003
+      responses:
+        '201':
+          description: Resource created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Staff'
+          headers:
+            Location:
+              description: Gateway-facing resource URL.
+              schema:
+                type: string
+                format: uri-reference
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./_shared.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./_shared.yaml#/components/responses/Forbidden
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      parameters:
+      - $ref: ./_shared.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                email: &id001
+                  type: string
+                  format: email
+                  maxLength: 255
+                password: &id006
+                  type: string
+                  format: password
+                  minLength: 8
+                  maxLength: 72
+                  writeOnly: true
+                  description: At least one uppercase letter and one digit, matching existing contract. Enforce
+                    <=72 UTF-8 bytes for bcrypt; never truncate.
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                role:
+                  type: string
+                  enum:
+                  - DENTIST
+                  - SECRETARY_ASSISTANT
+              required:
+              - email
+              - password
+              - name
+              - role
+  /auth/login:
+    post:
+      summary: Login
+      operationId: AuthLogin
+      tags:
+      - Auth
+      description: Generic 401 for invalid credentials, disabled/unverified/locked account. Three consecutive failures
+        temporarily lock for design default 15 minutes. Do not issue tokens before applicable MFA completes. Rate
+        limit independently by IP.
+      x-contract-clarification: "See ../../contract-reviews/auth.md (API-AUTH-01). The 401 body does not distinguish account state, credential validity or credential reuse."
+      x-roles: []
+      x-requirements:
+      - HU-IAM-001
+      - HU-IAM-005
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/Tokens'
+                - $ref: '#/components/schemas/MfaChallenge'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          description: "Generic authentication failure; do not reveal account existence, eligibility or credential history."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+              example: Bearer realm="di-lucca"
+          content:
+            application/json:
+              schema:
+                $ref: ./_shared.yaml#/components/schemas/ErrorResponse
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    error: UNAUTHORIZED
+                    message: "Authentication could not be completed."
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '429':
+          $ref: ./_shared.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                email: *id001
+                password:
+                  type: string
+                  format: password
+                  writeOnly: true
+              required:
+              - email
+              - password
+  /auth/mfa-verifications:
+    post:
+      summary: Verify MFA challenge
+      operationId: AuthVerifyMFAchallenge
+      tags:
+      - Auth
+      description: Single-purpose expiring challenge; accepted only after credentials. See authentication.md for
+        enrollment/default policy. No tokens on failed MFA; generic 401.
+      x-contract-clarification: "See ../../contract-reviews/auth.md (API-AUTH-01). The 401 body does not distinguish account state, credential validity or credential reuse."
+      x-roles: []
+      x-requirements:
+      - HU-IAM-005
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tokens'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          description: "Generic authentication failure; do not reveal account existence, eligibility or credential history."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+              example: Bearer realm="di-lucca"
+          content:
+            application/json:
+              schema:
+                $ref: ./_shared.yaml#/components/schemas/ErrorResponse
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    error: UNAUTHORIZED
+                    message: "Authentication could not be completed."
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '429':
+          $ref: ./_shared.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                challengeId: &id002
+                  $ref: ./_shared.yaml#/components/schemas/UUID
+                code:
+                  type: string
+                  minLength: 1
+                  maxLength: 16
+              required:
+              - challengeId
+              - code
+  /auth/mfa-enrollments:
+    post:
+      summary: Start MFA enrollment
+      operationId: AuthStartMFAenrollment
+      tags:
+      - Auth
+      description: Requires unconsumed challenge from successful password verification, never a bare userId. Only
+        when actor has no active factor. Challenge grants enrollment only, no business access. Return seed once;
+        provisional secret encrypted at rest.
+      x-roles: []
+      x-requirements:
+      - HU-IAM-005
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MfaEnrollment'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./_shared.yaml#/components/responses/Unauthorized
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '429':
+          $ref: ./_shared.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                challengeId: *id002
+              required:
+              - challengeId
+  /auth/mfa-enrollment-confirmations:
+    post:
+      summary: Confirm MFA enrollment
+      operationId: AuthConfirmMFAenrollment
+      tags:
+      - Auth
+      description: Requires enrollmentId and valid TOTP proof; atomically activate factor and consume enrollment.
+        Issue full session only after account eligibility recheck. Never allow replacement of existing factor through
+        enrollment.
+      x-roles: []
+      x-requirements:
+      - HU-IAM-005
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tokens'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./_shared.yaml#/components/responses/Unauthorized
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '429':
+          $ref: ./_shared.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                enrollmentId: *id002
+                code:
+                  type: string
+                  minLength: 1
+                  maxLength: 16
+              required:
+              - enrollmentId
+              - code
+  /auth/refresh:
+    post:
+      summary: Rotate refresh token
+      operationId: AuthRotaterefreshtoken
+      tags:
+      - Auth
+      description: No access JWT required; refresh credential mandatory. Atomic single use, 7-day expiry; revoke
+        family on reuse. Disabled/locked user cannot renew. Response tokens must not be cached.
+      x-contract-clarification: "See ../../contract-reviews/auth.md (API-AUTH-01). The 401 body does not distinguish account state, credential validity or credential reuse."
+      x-roles: []
+      x-requirements:
+      - HU-IAM-006
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tokens'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          description: "Generic authentication failure; do not reveal account existence, eligibility or credential history."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+              example: Bearer realm="di-lucca"
+          content:
+            application/json:
+              schema:
+                $ref: ./_shared.yaml#/components/schemas/ErrorResponse
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    error: UNAUTHORIZED
+                    message: "Authentication could not be completed."
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '429':
+          $ref: ./_shared.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                refreshToken:
+                  type: string
+                  writeOnly: true
+              required:
+              - refreshToken
+  /auth/logout:
+    post:
+      summary: Logout
+      operationId: AuthLogout
+      tags:
+      - Auth
+      description: Revoke current session, or all actor sessions when allDevices=true; invalidate outstanding access
+        through session revocation checks. No JWT input may choose another user.
+      x-roles: &id007
+      - ADMINISTRATOR
+      - DENTIST
+      - SECRETARY_ASSISTANT
+      x-requirements:
+      - HU-IAM-006
+      responses:
+        '204':
+          description: Operation completed without a response body.
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./_shared.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./_shared.yaml#/components/responses/Forbidden
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                allDevices: &id009
+                  type: boolean
+  /auth/staff:
+    get:
+      summary: List staff
+      operationId: AuthListstaff
+      tags:
+      - Auth
+      description: 'Administrator only; never return credential or token hashes. Stable default ordering: createdAt
+        ascending, id ascending; filter authorization before records/counts. Invalid page/limit: 400; empty or beyond-last
+        page: 200 with data=[].'
+      x-roles: *id003
+      x-requirements:
+      - HU-IAM-003
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffPage'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./_shared.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./_shared.yaml#/components/responses/Forbidden
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      parameters:
+      - $ref: ./_shared.yaml#/components/parameters/PageParam
+      - $ref: ./_shared.yaml#/components/parameters/LimitParam
+  /auth/staff/{id}:
+    get:
+      summary: Read staff
+      operationId: AuthReadstaff
+      tags:
+      - Auth
+      description: Administrator account administration.
+      x-roles: *id003
+      x-requirements:
+      - HU-IAM-003
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Staff'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./_shared.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./_shared.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./_shared.yaml#/components/responses/NotFound
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+    patch:
+      summary: Update staff
+      operationId: AuthUpdatestaff
+      tags:
+      - Auth
+      description: Name only in this contract. Email changes require a separate re-verification design; do not bypass
+        it. Role/status/password are not writable here.
+      x-roles: *id003
+      x-requirements:
+      - HU-IAM-003
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Staff'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./_shared.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./_shared.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./_shared.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                expectedVersion: &id004
+                  type: integer
+                  minimum: 1
+              required:
+              - name
+              - expectedVersion
+  /auth/staff/{id}/disablings:
+    post:
+      summary: Disablings staff
+      operationId: AuthDisablingsstaff
+      tags:
+      - Auth
+      description: Disable staff and revoke all sessions. Cannot disable bootstrap Administrator through this ordinary
+        flow.
+      x-roles: *id003
+      x-requirements:
+      - HU-IAM-003
+      - HU-IAM-005
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Staff'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./_shared.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./_shared.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./_shared.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+      - $ref: ./_shared.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: &id005
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+                expectedVersion: *id004
+              required:
+              - reason
+              - expectedVersion
+  /auth/staff/{id}/enablings:
+    post:
+      summary: Enablings staff
+      operationId: AuthEnablingsstaff
+      tags:
+      - Auth
+      description: Re-enable disabled staff only after account checks; unverified users remain PENDING_VERIFICATION.
+        Never restore revoked sessions.
+      x-roles: *id003
+      x-requirements:
+      - HU-IAM-003
+      - HU-IAM-005
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Staff'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./_shared.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./_shared.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./_shared.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+      - $ref: ./_shared.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: *id005
+  /auth/staff/{id}/unlocks:
+    post:
+      summary: Unlocks staff
+      operationId: AuthUnlocksstaff
+      tags:
+      - Auth
+      description: Audited administrative unlock; clear consecutive failures. Do not enable disabled/unverified
+        accounts.
+      x-roles: *id003
+      x-requirements:
+      - HU-IAM-003
+      - HU-IAM-005
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Staff'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./_shared.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./_shared.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./_shared.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+      - $ref: ./_shared.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: *id005
+  /auth/staff/{id}/role-assignments:
+    put:
+      summary: Replace role assignments
+      operationId: AuthReplaceroleassignments
+      tags:
+      - Auth
+      description: Administrator only. No ADMINISTRATOR grants or changes to bootstrap Administrator. Replace allowed
+        staff roles, unique/nonempty; revoke existing sessions so stale claims cannot grant old privileges.
+      x-roles: *id003
+      x-requirements:
+      - HU-IAM-002
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Staff'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./_shared.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./_shared.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./_shared.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                roles:
+                  type: array
+                  minItems: 1
+                  uniqueItems: true
+                  items:
+                    type: string
+                    enum:
+                    - DENTIST
+                    - SECRETARY_ASSISTANT
+                expectedVersion: *id004
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+              required:
+              - roles
+              - expectedVersion
+              - reason
+  /auth/email-verifications:
+    post:
+      summary: Verify staff email
+      operationId: AuthVerifystaffemail
+      tags:
+      - Auth
+      description: Consume hash-stored expiring token once; activate only eligible account. No account enumeration.
+      x-roles: []
+      x-requirements:
+      - HU-IAM-004
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '429':
+          $ref: ./_shared.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                token:
+                  type: string
+                  writeOnly: true
+              required:
+              - token
+  /auth/password-recovery-requests:
+    post:
+      summary: Request password recovery
+      operationId: AuthRequestpasswordrecovery
+      tags:
+      - Auth
+      description: Always return same generic acknowledgement regardless of account existence; queue email without
+        exposing identity. Rate limit.
+      x-roles: []
+      x-requirements:
+      - HU-IAM-004
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '429':
+          $ref: ./_shared.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                email: *id001
+              required:
+              - email
+  /auth/password-resets:
+    post:
+      summary: Reset password
+      operationId: AuthResetpassword
+      tags:
+      - Auth
+      description: Consume expiring single-purpose token, hash new password and revoke all user sessions. Does not
+        activate disabled/unverified account.
+      x-roles: []
+      x-requirements:
+      - HU-IAM-004
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '429':
+          $ref: ./_shared.yaml#/components/responses/TooManyRequests
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                token:
+                  type: string
+                  writeOnly: true
+                password: *id006
+              required:
+              - token
+              - password
+  /auth/sessions:
+    get:
+      summary: List own sessions
+      operationId: AuthListownsessions
+      tags:
+      - Auth
+      description: 'Only sessions belonging to authenticated actor; no raw refresh token, hash or device secret.
+        Stable default ordering: createdAt ascending, id ascending; filter authorization before records/counts.
+        Invalid page/limit: 400; empty or beyond-last page: 200 with data=[].'
+      x-roles: *id007
+      x-requirements:
+      - HU-IAM-006
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionPage'
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./_shared.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./_shared.yaml#/components/responses/Forbidden
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      parameters:
+      - $ref: ./_shared.yaml#/components/parameters/PageParam
+      - $ref: ./_shared.yaml#/components/parameters/LimitParam
+  /auth/sessions/{id}/revocations:
+    post:
+      summary: Revoke own session
+      operationId: AuthRevokeownsession
+      tags:
+      - Auth
+      description: Verify session belongs to caller; revoke its token family and access session. Administrator uses
+        staff disable for other users.
+      x-roles: *id007
+      x-requirements:
+      - HU-IAM-006
+      responses:
+        '204':
+          description: Operation completed without a response body.
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '401':
+          $ref: ./_shared.yaml#/components/responses/Unauthorized
+        '403':
+          $ref: ./_shared.yaml#/components/responses/Forbidden
+        '404':
+          $ref: ./_shared.yaml#/components/responses/NotFound
+        '409':
+          $ref: ./_shared.yaml#/components/responses/Conflict
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id002
+      - $ref: ./_shared.yaml#/components/parameters/IdempotencyKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+              required:
+              - reason
+  /auth/jwks:
+    get:
+      summary: Read public signing keys
+      operationId: AuthReadpublicsigningkeys
+      tags:
+      - Auth
+      description: Only public RSA signing keys with kid; never private key material. Rotation retains verification
+        keys until issued access tokens expire.
+      x-roles: []
+      x-requirements:
+      - HU-IAM-001
+      responses:
+        '200':
+          description: Operation completed.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      properties:
+                        kty:
+                          type: string
+                          enum:
+                          - RSA
+                        kid:
+                          type: string
+                          minLength: 1
+                          maxLength: 255
+                        use:
+                          type: string
+                          enum:
+                          - sig
+                        alg:
+                          type: string
+                          enum:
+                          - RS256
+                        n:
+                          type: string
+                          minLength: 1
+                          maxLength: 2048
+                        e:
+                          type: string
+                          minLength: 1
+                          maxLength: 32
+                      required:
+                      - kty
+                      - kid
+                      - use
+                      - alg
+                      - n
+                      - e
+                required:
+                - keys
+        '400':
+          $ref: ./_shared.yaml#/components/responses/BadRequest
+        '500':
+          $ref: ./_shared.yaml#/components/responses/InternalError
+        '503':
+          $ref: ./_shared.yaml#/components/responses/ServiceUnavailable
+      security: []
+components:
+  schemas:
+    Staff:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id002
+        email: *id001
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        roles:
+          type: array
+          items:
+            type: string
+            enum:
+            - ADMINISTRATOR
+            - DENTIST
+            - SECRETARY_ASSISTANT
+        status:
+          type: string
+          enum:
+          - PENDING_VERIFICATION
+          - ACTIVE
+          - LOCKED
+          - DISABLED
+        createdAt: &id008
+          $ref: ./_shared.yaml#/components/schemas/Timestamp
+        updatedAt: *id008
+        version: *id004
+      required:
+      - id
+      - email
+      - name
+      - roles
+      - status
+      - version
+    Tokens:
+      type: object
+      additionalProperties: false
+      properties:
+        accessToken:
+          type: string
+          minLength: 1
+          maxLength: 8192
+        refreshToken:
+          type: string
+          minLength: 1
+          maxLength: 512
+        expiresIn:
+          type: integer
+          enum:
+          - 3600
+        user:
+          $ref: '#/components/schemas/Staff'
+      required:
+      - accessToken
+      - refreshToken
+      - expiresIn
+      - user
+    MfaChallenge:
+      type: object
+      additionalProperties: false
+      properties:
+        challengeId: *id002
+        expiresAt: *id008
+        mfaRequired:
+          type: boolean
+          enum:
+          - true
+      required:
+      - challengeId
+      - expiresAt
+      - mfaRequired
+    MfaEnrollment:
+      type: object
+      additionalProperties: false
+      properties:
+        enrollmentId: *id002
+        secret:
+          type: string
+          description: TOTP seed delivered once over HTTPS; never log or cache.
+        expiresAt: *id008
+      required:
+      - enrollmentId
+      - secret
+      - expiresAt
+    Message:
+      type: object
+      additionalProperties: false
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+      - message
+    StaffPage:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Staff'
+        meta:
+          $ref: ./_shared.yaml#/components/schemas/PaginatedMeta
+      required:
+      - data
+      - meta
+    Session:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id002
+        device:
+          type: string
+          minLength: 1
+          maxLength: 200
+        expiresAt: *id008
+        current: *id009
+        createdAt: *id008
+        updatedAt: *id008
+        version: *id004
+      required:
+      - id
+      - expiresAt
+      - current
+      - version
+    SessionPage:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+        meta:
+          $ref: ./_shared.yaml#/components/schemas/PaginatedMeta
+      required:
+      - data
+      - meta
+  securitySchemes:
+    bearerAuth:
+      $ref: ./_shared.yaml#/components/securitySchemes/bearerAuth
+

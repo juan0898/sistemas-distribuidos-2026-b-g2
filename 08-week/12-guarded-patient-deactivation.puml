@@ -1,0 +1,59 @@
+@startuml 12-guarded-patient-deactivation
+title FD-03 - Guarded Patient Deactivation
+caption PAT-004/005 and section 07 private protocol; implementation pending
+skinparam shadowing false
+autonumber
+
+actor Administrator as admin
+participant "patients-service" as patients
+participant "appointments-service" as appointments
+database "appointments schema" as aptdb
+database "patients schema" as patdb
+
+admin -> patients : POST /api/v1/patients/{id}/deactivations
+note right of admin
+  Audited reason, expectedVersion,
+  Idempotency-Key; authenticated through Gateway
+end note
+patients -> patients : Authorize Administrator;\nvalidate reason, version and active state
+patients -> appointments : Acquire deactivation guard
+appointments -> aptdb : Lock per-patient gate; check authoritative\nnon-terminal appointments and open activity guards
+
+alt blocking appointment or activity guard
+  aptdb --> appointments : Conflict
+  appointments --> patients : 409 Conflict
+  patients --> admin : 409; patient remains ACTIVE
+else authoritative check unavailable
+  appointments --> patients : Unavailable / unknown result
+  patients --> admin : 503; do not deactivate
+else no blockers; guard durably acquired
+  appointments -> aptdb : Persist guard; block new scheduling,\nstart-of-care and conflicting activity guards
+  appointments --> patients : Guard proof and operation ID
+  patients -> patdb : Local transaction: compare expectedVersion;\nset INACTIVE + audit + saved result\n+ PatientDeactivated outbox
+  alt patient transaction committed
+    patdb --> patients : Committed
+    patients -> appointments : Resolve guard as committed
+    appointments -> aptdb : Finalize gate as inactive
+    patients --> admin : 200 with inactive patient
+  else patient transaction rejected or outcome unknown
+    patients -> patients : Reconcile durable patient operation outcome
+    note over patients,aptdb
+      Never infer rollback from a timeout.
+    end note
+  end
+end
+
+note over patients,aptdb
+  Reconciliation rules:
+  confirmed INACTIVE -> finalize inactive gate;
+  confirmed aborted before commit -> release guard;
+  unknown/unavailable -> retain block and retry.
+  PatientDeactivated is also an idempotent reconciliation signal.
+end note
+
+note over patients,patdb
+  No automatic appointment cancellation or physical deletion.
+  Inactive patients retain authorized administrative,
+  clinical and financial historical access.
+end note
+@enduml

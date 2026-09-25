@@ -1,0 +1,43 @@
+@startuml 04-protected-request-path
+title Protected Request Path — Patient Administrative Read
+
+skinparam shadowing false
+autonumber
+
+actor "Authenticated staff" as staff
+participant "Internal web app" as web
+participant "API Gateway" as gateway
+participant "Auth / session validation" as auth
+participant "patients-service\nHTTP adapter" as http
+participant "Patients application\nuse case" as app
+participant "Authorization port" as authorization
+database "PostgreSQL\npatients schema" as db
+
+staff -> web : Open patient administration
+web -> gateway : GET /api/v1/patients/{id}\nAuthorization: Bearer JWT
+gateway -> gateway : Remove untrusted identity headers\nvalidate route and token
+gateway -> auth : Validate session eligibility\n(private contract when required)
+auth --> gateway : Active staff claims
+gateway -> http : Forward trusted staff context
+http -> app : ReadPatient(id, actor)
+app -> authorization : Check role, assignment and field scope
+
+alt caller may access resource
+  authorization --> app : Allowed projection
+  app -> db : Read owned administrative profile
+  db --> app : Patient administrative data
+  app --> http : Full admin/assistant view\nor minimal Dentist care view
+  http --> gateway : 200 OK
+  gateway --> web : 200 OK
+else nonexistent or outside patient scope
+  authorization --> app : Denied without enumeration
+  app --> http : NotFound
+  http --> gateway : 404 ErrorResponse
+  gateway --> web : 404 ErrorResponse
+end
+
+note over app,db
+  No Clinical history is read from Patients.
+  Authorization happens before data and pagination totals are returned.
+end note
+@enduml
