@@ -31,7 +31,7 @@ Apply observability practices to the Billing domain using distributed tracing, s
 
 ## 3. Critical user journey
 
-- Journey: PENDING
+- JOURNEY: Record an invoice payment (HU-BIL-003) - 01-journey.md
 - Entry point: PENDING
 - Related components: PENDING
 - Trace propagation: PENDING
