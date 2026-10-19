@@ -1,5 +1,5 @@
 
-# CP4 ??? Golden Signals and Metrics Catalog
+# CP4 — Golden Signals and Metrics Catalog
 
 ## 1. Scope and objective
 
@@ -118,3 +118,52 @@ sum(rate(billing_payment_requests_total{
 
 This separate conflict metric helps distinguish expected concurrency or idempotency rejections from service outages.
 
+## 6. Saturation queries
+
+### Database connection utilization
+
+```promql
+billing_db_connections_in_use{pool="billing"}
+/
+clamp_min(billing_db_connections_max{pool="billing"}, 1)
+```
+
+### Pending payment events
+
+```promql
+billing_outbox_pending_events{event_type="PaymentRecorded"}
+```
+
+These queries require production exporters and instrumentation that are not currently implemented in the prototype.
+
+## 7. Cardinality and privacy policy
+
+Never use invoice IDs, payment IDs, patient IDs, email addresses, correlation IDs, trace IDs, or idempotency keys as metric labels.
+
+Use normalized route templates instead of concrete URLs containing invoice identifiers.
+
+Keep metric labels within explicitly approved, bounded values. Store per-request identifiers in controlled structured logs and trace context rather than time-series labels.
+
+Do not place personal, payment-card, or authentication data in metric names or label values.
+
+## 8. Documentation references
+
+1. `07-api/contracts/openapi/billing-service.yaml` — HU-BIL-003, payment recording endpoint, successful responses, and HTTP 409 business conflicts.
+2. `09-microservices/dependency-map.md` — Billing dependencies, including PostgreSQL, Patients, authentication, and RabbitMQ.
+3. `09-microservices/communication-patterns.md` — synchronous REST operations, asynchronous `PaymentRecorded` events, and notification workflows.
+
+Related workshop evidence:
+
+- `01-journey.md` — payment journey and trace propagation.
+- `02-log-contract.md` — structured logging and correlation.
+- `03-instrumentation/HOW-TO-RUN.md` — prototype implementation and verified unit tests.
+
+## 9. Validation status
+
+**Defined:** metric names, types, labels, histogram boundaries, PromQL queries, and cardinality rules.
+
+**Verified locally:** CP3 unit tests for the in-memory payment counter and duration histogram.
+
+**Not verified:** Prometheus scraping, live dashboards, database saturation, production p95/p99, or real service error rates.
+
+No production measurements are claimed in this checkpoint.
