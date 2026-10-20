@@ -118,3 +118,40 @@ A failed notification must not reverse a successfully committed payment.
 
 ## 8. Mitigation and escalation
 
+- Pause risky deployments if critical payment failures continue.
+- Involve the Billing service owner for application issues.
+- Involve infrastructure support for PostgreSQL or messaging failures.
+- Preserve logs, timestamps, and trace identifiers.
+- Document any operational action and its observed result.
+- Escalate if the cause is unknown or consistency is uncertain.
+
+These are proposed responsibilities, not an established on-call procedure.
+
+## 9. Recovery verification
+
+Before closing the incident:
+
+1. Confirm the alert condition has cleared.
+2. Verify authorized payment requests complete as expected.
+3. Check latency and error trends against the proposed SLOs.
+4. Verify invoice balances and payment records are consistent.
+5. Check pending events and delayed notifications.
+6. Record the recovery time and supporting evidence.
+7. Open follow-up tasks for unresolved risks.
+
+Alert recovery alone does not prove transactional consistency.
+
+## 10. Documentation references
+
+1. `07-api/contracts/openapi/billing-service.yaml` — payment recording endpoint, HTTP responses, and documented conflict codes.
+2. `09-microservices/dependency-map.md` — Billing service dependencies and infrastructure.
+3. `09-microservices/communication-patterns.md` — synchronous processing, `PaymentRecorded` events, and notification separation.
+
+Related workshop artifacts: `01-journey.md`, `02-log-contract.md`, `05-slo.md`, `06-alerts.yml`, and `06-alert-policy.md`.
+
+## 11. Validation and limitations
+
+**Defined:** incident triggers, diagnostic steps, safe mitigation, escalation, and recovery checks.
+
+**Not validated:** production alert delivery, live PostgreSQL diagnostics, real message-queue recovery, and end-to-end payment incident response.
+
