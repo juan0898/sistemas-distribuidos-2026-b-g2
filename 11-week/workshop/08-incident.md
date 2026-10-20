@@ -118,3 +118,46 @@ The exercise does not claim that any command was executed against a real databas
 **Remaining uncertainty:** No actual trace capture, database measurement, payment failure count, or incident response time was observed.
 
 ## 8. Improvement backlog - three user stories
+
+### HU-OBS-001 - Dependency latency visibility
+
+As a Billing operator, I want a bounded-label dependency latency histogram so that I can identify slow PostgreSQL operations.
+
+**Acceptance criteria:**
+- Record dependency durations in seconds.
+- Expose histogram buckets and request counts.
+- Exclude invoice, patient, and payment IDs from metric labels.
+
+### HU-OBS-002 - Latency-based alerting
+
+As an incident responder, I want an alert for sustained payment latency violations so that slow transactions are investigated before availability deteriorates.
+
+**Acceptance criteria:**
+- Evaluate the proposed 1-second latency threshold.
+- Use both a sustained window and minimum request-volume safeguard.
+- Link the alert to the Billing incident runbook.
+
+### HU-OBS-003 - Safe payment recovery verification
+
+As a Billing operator, I want a documented payment-outcome verification procedure so that retries do not duplicate committed payments.
+
+**Acceptance criteria:**
+- Verify authoritative payment and invoice state before retrying.
+- Respect existing idempotency and version-conflict rules.
+- Include checks for pending `PaymentRecorded` events.
+
+## 9. Documentation and evidence
+
+1. `07-api/contracts/openapi/billing-service.yaml` - HU-BIL-003, payment recording, conflict handling, and successful responses.
+2. `09-microservices/dependency-map.md` - PostgreSQL and other Billing dependencies.
+3. `09-microservices/communication-patterns.md` - synchronous REST boundaries and asynchronous payment events.
+
+Workshop references: `01-journey.md`, `04-metrics.md`, `05-slo.md`, `06-alerts.yml`, and `07-runbook.md`.
+
+## 10. Validation status
+
+**Completed:** hypothetical scenario analysis, timeline, expected SLO impact, alert review, postmortem, and three improvement stories.
+
+**Not performed:** live fault injection, production monitoring, real payment attempts, or database recovery.
+
+
