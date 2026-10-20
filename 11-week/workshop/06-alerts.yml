@@ -1,0 +1,108 @@
+groups:
+  - name: billing-payment-slo
+    interval: 30s
+    rules:
+      - alert: BillingPaymentAvailabilityFastBurn
+        expr: |
+          (
+            (
+              sum(rate(billing_payment_requests_total{
+                operation="record_payment",outcome="error"
+              }[1h]))
+              /
+              clamp_min(
+                sum(rate(billing_payment_requests_total{
+                  operation="record_payment"
+                }[1h])),
+                0.001
+              )
+            ) > (14.4 * 0.001)
+          )
+          and
+          (
+            (
+              sum(rate(billing_payment_requests_total{
+                operation="record_payment",outcome="error"
+              }[5m]))
+              /
+              clamp_min(
+                sum(rate(billing_payment_requests_total{
+                  operation="record_payment"
+                }[5m])),
+                0.001
+              )
+            ) > (14.4 * 0.001)
+          )
+        for: 2m
+        labels:
+          severity: critical
+          service: billing
+          journey: record_payment
+          slo: availability
+        annotations:
+          summary: "Billing payment availability error budget is burning fast"
+          description: "Error ratio exceeds 14.4x the 99.9% SLO budget over 1h and 5m."
+          runbook: "07-runbook.md"
+
+      - alert: BillingPaymentAvailabilitySlowBurn
+        expr: |
+          (
+            (
+              sum(rate(billing_payment_requests_total{
+                operation="record_payment",outcome="error"
+              }[6h]))
+              /
+              clamp_min(
+                sum(rate(billing_payment_requests_total{
+                  operation="record_payment"
+                }[6h])),
+                0.001
+              )
+            ) > (6 * 0.001)
+          )
+          and
+          (
+            (
+              sum(rate(billing_payment_requests_total{
+                operation="record_payment",outcome="error"
+              }[30m]))
+              /
+              clamp_min(
+                sum(rate(billing_payment_requests_total{
+                  operation="record_payment"
+                }[30m])),
+                0.001
+              )
+            ) > (6 * 0.001)
+          )
+        for: 5m
+        labels:
+          severity: warning
+          service: billing
+          journey: record_payment
+          slo: availability
+        annotations:
+          summary: "Billing payment availability error budget is burning"
+          description: "Error ratio exceeds 6x the 99.9% SLO budget over 6h and 30m."
+          runbook: "07-runbook.md"
+
+      - alert: BillingPaymentDatabaseSaturation
+        expr: |
+          (
+            billing_db_connections_in_use{pool="billing"}
+            /
+            clamp_min(
+              billing_db_connections_max{pool="billing"},
+              1
+            )
+          ) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          service: billing
+          journey: record_payment
+          slo: saturation
+        annotations:
+          summary: "Billing database connection utilization is high"
+          description: "The Billing connection pool exceeds 85% utilization for 10 minutes."
+          runbook: "07-runbook.md"
