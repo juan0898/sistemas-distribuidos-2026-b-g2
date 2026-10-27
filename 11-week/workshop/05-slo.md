@@ -1,18 +1,18 @@
+# CP6 - Service Level Objectives and Error Budgets
 
-# CP6 — Service Level Objectives and Error Budgets
+## 1. Scope and current implementation
 
-## 1. Scope
-
-**Team:** DI LUCCA Dental Care & Technology  
-**Domain:** Billing  
-**Critical journey:** Record an invoice payment (HU-BIL-003)  
+**Team:** DI LUCCA Dental Care & Technology
+**Domain:** Billing
+**Journey:** Record an invoice payment (HU-BIL-003)
 **Endpoint:** `POST /api/v1/invoices/{id}/payments`
+**Measurement window:** Rolling 30 days
 
-This document proposes service level indicators (SLIs), service level objectives (SLOs), and error budgets for the Billing payment-recording journey.
+The Billing frontend currently uses static or in-memory demonstration data. It is not connected to a functional Billing backend or PostgreSQL database.
 
-The objectives are design targets, not measured production commitments. The Billing backend has not been instrumented or tested against these thresholds.
+All SLOs, traffic estimates, and PromQL queries in this document are proposed for future production instrumentation. No real traffic or service reliability measurements are claimed.
 
-## 2. Measurement principles
+## 2. Measurement rules
 
 - **Measurement window:** rolling 30 days.
 - **Source:** future production HTTP and application metrics.
