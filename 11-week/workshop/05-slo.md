@@ -14,127 +14,198 @@ All SLOs, traffic estimates, and PromQL queries in this document are proposed fo
 
 ## 2. Measurement rules
 
-- **Measurement window:** rolling 30 days.
-- **Source:** future production HTTP and application metrics.
-- **Eligible requests:** authorized, valid payment submissions reaching Billing.
-- **Successful request:** a payment is recorded and the service returns HTTP 201.
-- **Business rejection:** documented HTTP 409 conflicts are monitored separately when caused by valid business rules.
-- **Service failure:** an eligible payment cannot be processed because of a server, dependency, or infrastructure problem.
-- **Minimum traffic:** evaluate low-volume periods carefully to avoid misleading percentages.
+- HTTP 201 represents a successfully recorded payment.
+- Documented HTTP 409 business conflicts are correct service decisions, not infrastructure failures.
+- HTTP 400 and 401 are excluded from eligible payment operations.
+- HTTP 5xx and infrastructure-related failures consume the availability error budget.
+- A committed payment remains successful even if a later notification fails.
+- Timeouts require transaction-outcome verification before retrying.
+- Metric labels must use bounded values and normalized routes.
 
-A notification delivery failure after a committed payment is tracked separately. It must not retroactively classify a successfully recorded payment as a failed transaction.
+The proposed Prometheus metrics are documented in `04-metrics.md`.
 
-## 3. Proposed SLOs
+## 3. Three proposed SLOs
 
-| SLO | Indicator (SLI) | Target over 30 days |
+| SLO | SLI | Target | Window |
+|---|---|---|---|
+| Availability | Correct payment outcomes / eligible payment requests | 99.9% | 30 days |
+| Latency | Eligible completed requests within 1 second / eligible completed requests | 95% | 30 days |
+| Event freshness | Minutes with `PaymentRecorded` outbox age at most 60 seconds / observed minutes | 99% | 30 days |
+
+The third SLO covers asynchronous event publication rather than repeating the HTTP availability indicator.
+
+## 4. SLO 1 - Payment availability
+
+**Target:** 99.9% over a rolling 30-day window.
+
+**Formula:**
+
+`availability = (success + conflict) / (success + conflict + error)`
+
+A documented business conflict counts as a correct response when the service applies the intended business rule.
+
+**Proposed PromQL:**
+
+```promql
+1 -
+(
+  (sum(increase(billing_payment_requests_total{
+    operation="record_payment",outcome="error"
+  }[30d])) or vector(0))
+  /
+  clamp_min(
+    sum(increase(billing_payment_requests_total{
+      operation="record_payment"
+    }[30d])),
+    1
+  )
+)
+```
+
+**Allowed error budget:** `1 - 0.999 = 0.001 = 0.1%`.
+
+The outcome metric must consistently classify eligible attempts as `success`, `conflict`, or `error`. Invalid client requests must not enter this denominator.
+
+## 5. SLO 2 - Payment latency
+
+**Target:** At least 95% of eligible completed requests finish within 1 second.
+
+**Formula:**
+
+`latency_sli = eligible_requests_at_most_1s / eligible_completed_requests`
+
+**Proposed PromQL:**
+
+```promql
+sum(increase(billing_payment_duration_seconds_bucket{
+  operation="record_payment",
+  outcome=~"success|conflict",le="1"
+}[30d]))
+/
+clamp_min(
+  sum(increase(billing_payment_duration_seconds_count{
+    operation="record_payment",
+    outcome=~"success|conflict"
+  }[30d])),
+  1
+)
+```
+
+The histogram measures synchronous processing until the authoritative HTTP response. Asynchronous email delivery is excluded.
+
+**Allowed latency budget:** 5% of eligible completed requests may exceed 1 second.
+
+The 1-second threshold is a design assumption, not an observed user requirement.
+
+## 6. SLO 3 - Payment event freshness
+
+**Target:** The oldest pending `PaymentRecorded` outbox event is at most 60 seconds old during 99% of observed minutes.
+
+**Formula:**
+
+`freshness_sli = healthy_observed_minutes / total_observed_minutes`
+
+**Additional proposed metric:**
+
+`billing_outbox_oldest_pending_age_seconds{event_type="PaymentRecorded"}`
+
+This metric must be added to the CP4 catalog. It should report zero when no events are pending and must not use event IDs as labels.
+
+**Proposed PromQL:**
+
+```promql
+avg_over_time(
+  (
+    billing_outbox_oldest_pending_age_seconds{
+      event_type="PaymentRecorded"
+    } <= bool 60
+  )[30d:1m]
+)
+```
+
+**Allowed freshness budget:** 1% of observed minutes.
+
+This SLO can fail even when payment requests return HTTP 201, making it operationally different from availability.
+
+Missing telemetry must be detected separately; missing samples must not silently count as healthy.
+
+## 7. Justified traffic estimate
+
+The following assumptions are illustrative, not clinic measurements.
+
+| Assumption | Value | Rationale |
+|---|---:|---|
+| Dentists | 4 | Hypothetical small-clinic capacity |
+| Appointments per dentist per day | 8 | Hypothetical working-day workload |
+| Appointments generating a payment | 70% | Planning assumption |
+| Payment attempts per payment | 1.2 | Allows for retries or conflicts |
+| Days in modeled month | 30 | Simplified SLO calculation |
+
+**Estimated daily requests:**
+
+`4 × 8 × 0.70 × 1.2 = 26.88 ≈ 27 requests/day`
+
+**Estimated 30-day requests:**
+
+`27 × 30 = 810 requests`
+
+This simplified model assumes the same activity every day. Real clinic schedules and demand may differ.
+
+## 8. Error budgets in numbers
+
+| SLO | Calculation | Illustrative budget |
 |---|---|---|
-| Availability | Successful eligible payment requests / all eligible payment requests | 99.9% |
-| Latency | Eligible payment requests completed within 1 second / all eligible completed payment requests | 95% |
-| Reliability | Payment transactions completed without infrastructure-related failure / all eligible transaction attempts | 99.95% |
+| Availability | 810 × 0.001 | 0.81 failed requests |
+| Latency | 810 × 0.05 | 40.5 slow requests |
+| Event freshness | 43,200 × 0.01 | 432 unhealthy minutes |
 
-The values are proposed initial objectives and require calibration using real workload and historical measurements.
+Because failures are discrete, the availability example permits zero complete failed requests before exceeding the modeled budget. This illustrates how restrictive a 99.9% target is at low volume.
 
-## 4. SLO 1 — Payment availability
+**Availability time equivalent:**
 
-**Target:** 99.9% of eligible payment requests complete successfully.
+`30 × 24 × 60 = 43,200 minutes`
 
-**SLI formula:**
+`43,200 × 0.001 = 43.2 minutes`
 
-`availability = successful_payment_requests / eligible_payment_requests`
+The 43.2-minute value is an equivalent continuous-outage illustration, not an additional allowance to the request-based budget. Actual consumption depends on traffic and failed requests.
 
-The denominator includes eligible attempts affected by timeouts, HTTP 5xx responses, or unavailable dependencies.
+Real error budgets must be recalculated using measured volume and actual outcomes.
 
-Documented business-rule conflicts such as `STALE_VERSION`, `IDEMPOTENCY_CONFLICT`, and `PAYMENT_EXCEEDS_BALANCE` are excluded when they represent correct rejection of a request. Unexpected conflicts must be investigated rather than automatically excluded.
+## 9. Error-budget response policy
 
-**30-day error budget:**
-
-`1 - 0.999 = 0.001 = 0.1% of eligible requests`
-
-For an illustrative volume of 100,000 eligible requests, the budget permits 100 unsuccessful requests.
-
-This volume is hypothetical and is not based on observed Billing traffic.
-
-## 5. SLO 2 — Payment latency
-
-**Target:** At least 95% of eligible completed payment requests finish within 1 second.
-
-**SLI formula:**
-
-`latency_compliance = requests_duration_le_1s / eligible_completed_requests`
-
-The duration is measured from Billing receiving a request to Billing sending the authoritative HTTP response.
-
-It includes synchronous persistence and required validation, but excludes asynchronous notification delivery after the payment commits.
-
-**30-day error budget:**
-
-`1 - 0.95 = 0.05 = 5% of eligible completed requests`
-
-For 100,000 hypothetical completed requests, up to 5,000 may exceed 1 second.
-
-The latency threshold is a design proposal, not a verified benchmark.
-
-## 6. SLO 3 — Payment reliability
-
-**Target:** 99.95% of eligible payment transaction attempts complete without infrastructure-related failure.
-
-**SLI formula:**
-
-`reliability = transactions_without_infrastructure_failure / eligible_transaction_attempts`
-
-A failed transaction includes unhandled database failures, dependency timeouts that prevent completion, and internal errors that stop an otherwise valid payment.
-
-Correctly rejected business-rule conflicts do not count as infrastructure failures.
-
-**30-day error budget:**
-
-`1 - 0.9995 = 0.0005 = 0.05% of eligible attempts`
-
-For 100,000 hypothetical transaction attempts, the budget permits 50 infrastructure-related failures.
-
-Availability and reliability measure related outcomes and may overlap. Reliability is specifically scoped to the transaction's infrastructure-dependent processing.
-
-## 7. Error-budget consumption and response
-
-| Budget consumption | Proposed operational response |
+| Consumed budget | Proposed team action |
 |---|---|
-| Below 25% | Continue normal delivery and review monitoring trends |
-| 25%–50% | Investigate recurring failures and latency regressions |
-| 50%–100% | Prioritize reliability improvements and increase release review |
-| Above 100% | Pause nonessential risky releases and prioritize service recovery |
+| 50% | Review error codes in the daily meeting; assign a Billing investigation |
+| 75% | Prioritize reliability tasks and limit risky payment-related releases |
+| 100% | Freeze nonessential payment feature releases until recovery and review |
 
-These responses are proposed policies, not existing team procedures.
+For the illustrative availability budget of 0.81 failed requests, even one failed eligible request exceeds 100%. Percentages are therefore more useful with longer observation periods or higher actual traffic.
 
-Budget consumption is calculated as:
+The Billing service owner coordinates application investigation; the infrastructure owner reviews database and messaging risks. These are proposed responsibilities, not verified assignments.
 
-`observed_bad_events / permitted_bad_events`
+## 10. Relationship with alerting
 
-An exhausted budget requires reviewing incidents, failed dependencies, tests, and monitoring coverage before resuming high-risk changes.
+`06-alerts.yml` uses the same 99.9% availability objective:
 
-## 8. Prometheus implementation considerations
+- Fast burn: `14.4 × 0.001 = 0.0144` (1.44% error ratio).
+- Slow burn: `6 × 0.001 = 0.006` (0.6% error ratio).
 
-The proposed metrics in `04-metrics.md` would support request counts, duration buckets, and error ratios.
+Both alerts need minimum-volume safeguards because the estimated payment traffic is low.
 
-A production implementation must define consistent instrumentation at the Billing boundary, handle missing metric series, and distinguish expected business conflicts from infrastructure failures.
+The event freshness SLO needs separate monitoring before deployment.
 
-Percentile latency charts are useful for diagnosis, but the latency SLO should be evaluated using the fraction of requests satisfying the one-second threshold.
+## 11. Documentation references
 
-There are no production SLO results or measured error-budget values available in this workshop.
+1. `07-api/contracts/openapi/billing-service.yaml` - HU-BIL-003, payment recording and HTTP conflict handling.
+2. `09-microservices/dependency-map.md` - Billing dependencies, PostgreSQL and RabbitMQ.
+3. `09-microservices/communication-patterns.md` - REST payment processing, outbox publication and asynchronous `PaymentRecorded` events.
 
-## 9. Documentation references
+Related evidence: `01-journey.md`, `04-metrics.md`, `06-alerts.yml`, and `07-runbook.md`.
 
-1. `07-api/contracts/openapi/billing-service.yaml` — HU-BIL-003, payment recording, HTTP 201 responses, and documented HTTP 409 business conflicts.
-2. `09-microservices/dependency-map.md` — Billing dependencies such as PostgreSQL, authentication, Patients, and RabbitMQ.
-3. `09-microservices/communication-patterns.md` — synchronous payment processing, asynchronous `PaymentRecorded` events, and independent notification handling.
+## 12. Validation status
 
-Related evidence:
+**Defined:** three distinct SLOs, PromQL expressions, justified hypothetical traffic, error budgets and operational policies.
 
-- `01-journey.md` — payment journey and failure boundaries.
-- `03-instrumentation/HOW-TO-RUN.md` — scope of the tested prototype.
-- `04-metrics.md` — golden signals, proposed metrics, and PromQL queries.
+**Not validated:** actual request rates, service latency, outbox event freshness, Prometheus evaluation or production error budgets.
 
-## 10. Validation status
-
-**Defined:** three SLOs, measurement windows, eligibility criteria, error budgets, and operational responses.
-
-**Not validated:** real production availability, latency distributions, transaction reliability, actual traffic volumes, and error-budget consumption.
+All numerical examples are hypothetical.
