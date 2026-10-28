@@ -1,4 +1,5 @@
 
+
 <!-- HU-STATUS TEMPLATE - do NOT remove the <!-- ... --> markers or the table headers.
      Your weekly grade is read AUTOMATICALLY from this file:
        11-week/hu-status/README.md  (inside YOUR fork). English. -->
@@ -9,45 +10,59 @@
 - FULL_NAME: Juan Diego Mora Alvarado
 - GITHUB_USER: juan0898
 - TEAM: DI LUCCA Dental Care & Technology
-- SPRINT_GOAL: Complete and document the Billing HU-BIL-003 observability workshop, including tracing, structured logging, metrics, SLOs, alerting, incident response, and final evidence.
+- SPRINT_GOAL: Complete and refine the Billing HU-BIL-003 observability workshop, covering tracing, structured logging, metrics, SLOs, alerting, incident response, and final evidence.
 <!-- CONFIG-END -->
 
 ## 1. User stories worked this week
+
 | HU ID | Title | Status (todo/doing/done) | Evidence (PR or commit URL) |
 |---|---|---|---|
 | HU-BIL-003 | Document the invoice payment journey and observability contract | done | https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/36babb9 |
 | HU-BIL-003 | Build and test an independent observability prototype | done | https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/623c369 |
-| HU-BIL-003 | Define payment metrics and service-level objectives | done | https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/800e4cb |
-| HU-BIL-003 | Define alert rules and response policy | done | https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/7f7649d |
-| HU-BIL-003 | Document incident response and simulated failure analysis | done | https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/d635924 |
+| HU-BIL-003 | Define and refine payment metrics and SLOs | done | https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/af55324 |
+| HU-BIL-003 | Refine alert rules and operational response policy | done | https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/023cd80 |
+| HU-BIL-003 | Improve incident runbook and simulated failure analysis | done | https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/64203c1 |
 
 ## 2. My individual contribution
+
 - Selected HU-BIL-003 and documented the critical invoice payment journey.
 - Defined structured JSON logs, trace context, and correlation requirements.
-- Built a standalone Node.js prototype for tracing, logging, and in-memory metrics.
+- Built a standalone Node.js observability prototype.
 - Executed 12 automated tests successfully across two test files.
-- Defined golden signals, PromQL queries, histogram buckets, and cardinality rules.
-- Proposed three SLOs with error budgets and operational response policies.
-- Documented Prometheus alert rules, severity levels, and escalation procedures.
-- Prepared a Billing incident runbook and a hypothetical dependency slowdown analysis.
-- Proposed three observability improvement user stories.
-- Prepared personal reflections for CP0 through CP9.
+- Refined the Golden Signals catalog, bounded metric labels, and cardinality estimates.
+- Documented justified latency histogram buckets and proposed PromQL queries.
+- Defined three distinct SLOs for payment availability, latency, and `PaymentRecorded` event freshness.
+- Calculated hypothetical traffic estimates and error budgets for a 30-day window.
+- Improved Prometheus alert rules with low-traffic safeguards and runbook links.
+- Defined burn-rate calculations, severity levels, proposed routing, and escalation responsibilities.
+- Expanded the Billing incident runbook with diagnostic queries and three risk-ordered mitigations.
+- Documented a hypothetical PostgreSQL slowdown using a synthetic trace and four correlated JSON logs.
+- Estimated incident impact and evaluated the proposed alert conditions.
+- Defined three observability improvement stories with Given/When/Then acceptance criteria.
+- Prepared individual checkpoint reflections and a final implementation plan.
 
 ## 3. Blockers and risks
+
 - The Billing frontend currently uses static or in-memory demonstration data.
-- The payment flow is not connected to a functional Billing backend or PostgreSQL database.
+- The payment journey is not connected to a functional Billing backend or PostgreSQL database.
 - The Node.js prototype is independent and does not instrument deployed services.
 - Prometheus metrics, alert delivery, and cross-service tracing have not been validated.
-- The CP9 incident is hypothetical; no real database failure or payment incident was observed.
+- The CP9 incident is hypothetical; no real database slowdown or payment incident was observed.
+- Traffic volumes, SLO thresholds, and alert safeguards require calibration using real measurements.
+- Outbox event-freshness instrumentation and operational recovery procedures remain proposed.
 
 ## 4. Plan for next week
-- Integrate observability with the Billing backend when the authorized service becomes available.
-- Validate metrics and trace propagation across actual service boundaries.
-- Review alert thresholds using real measurements and request volumes.
-- Verify payment consistency, idempotency, and operational recovery procedures.
-- Prioritize the improvement stories identified during CP9.
+
+- Integrate observability with the authorized Billing backend when available.
+- Instrument the payment endpoint and validate trace propagation across documented service boundaries.
+- Introduce bounded Prometheus metrics and verify histogram buckets.
+- Evaluate the availability, latency, and event-freshness SLOs using actual request data.
+- Validate alert expressions, minimum-volume conditions, and notification routing.
+- Verify payment consistency, idempotency, and safe recovery after uncertain outcomes.
+- Prioritize the three improvement stories identified in CP9.
 
 ## 5. Compliance self-check
+
 - [x] Conventional Commits - `type(scope): summary`
 - [ ] Per-environment HU branch + PR to that environment (hu-xxx-dev -> develop, ...)
 - [x] Testable acceptance criteria
@@ -56,6 +71,9 @@
 - [x] No secrets; config via environment variables
 
 ## 6. Evidence links
+
+### Original checkpoint evidence
+
 - CP0: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/14578a0
 - CP1: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/36babb9
 - CP2: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/3fbb746
@@ -71,4 +89,27 @@
 - CP7 alert policy: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/7f7649d
 - CP8 runbook: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/a8e5457
 - CP9 incident simulation: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/d635924
+- CP10 final weekly status: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/91d62c7
+
+### Corrections after instructor feedback
+
+- CP6 scope and measurement rules: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/db77cce
+- CP6 revised SLOs and budgets: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/af55324
+- CP4 revised metrics and cardinality: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/028ada8
+- CP7 revised alert rules: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/2397d09
+- CP7 revised alert policy: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/023cd80
+- CP8 revised runbook procedures: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/374ce44
+- CP8 runbook PromQL diagnostics: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/df3b898
+- CP9 revised incident and postmortem: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/7a348e9
+- CP9 simulated trace and impact calculations: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/64203c1
+
+### Reflection and workshop
+
 - Personal reflection: https://docs.google.com/document/d/13C33fXcaJwwgcZA5jHfriCVwmpB-6n1KIio8piMvgV8/edit?usp=sharing
+- Workshop folder: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/tree/main/11-week/workshop
+
+## 7. Validation status
+
+**Completed:** CP0-CP10 workshop documentation, independent Node.js prototype, 12 passing tests, revised metric catalog, SLO design, alert policy, incident runbook, and hypothetical postmortem.
+
+**Not completed:** Production Billing integration, deployed Prometheus monitoring, operational alerting, real database incident testing, and actual SLO verification.
