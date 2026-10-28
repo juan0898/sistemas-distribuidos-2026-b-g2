@@ -2,6 +2,9 @@ groups:
   - name: billing-payment-slo
     interval: 30s
     rules:
+      # Fast burn: 14.4x the 99.9% availability error budget.
+      # Both 1h and 5m windows must exceed the threshold.
+      # Minimum error count reduces noise at low traffic.
       - alert: BillingPaymentAvailabilityFastBurn
         expr: |
           (
@@ -33,6 +36,12 @@ groups:
               )
             ) > (14.4 * 0.001)
           )
+          and
+          (
+            sum(increase(billing_payment_requests_total{
+              operation="record_payment",outcome="error"
+            }[1h])) >= 2
+          )
         for: 2m
         labels:
           severity: critical
@@ -41,9 +50,11 @@ groups:
           slo: availability
         annotations:
           summary: "Billing payment availability error budget is burning fast"
-          description: "Error ratio exceeds 14.4x the 99.9% SLO budget over 1h and 5m."
-          runbook: "07-runbook.md"
+          description: "The payment error ratio exceeds 14.4x the 99.9% SLO budget in both 1h and 5m windows, with at least two errors in 1h."
+          runbook_url: "https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/blob/main/11-week/workshop/07-runbook.md"
 
+      # Slow burn: 6x the availability error budget.
+      # Sustained errors must appear in both 6h and 30m windows.
       - alert: BillingPaymentAvailabilitySlowBurn
         expr: |
           (
@@ -75,6 +86,12 @@ groups:
               )
             ) > (6 * 0.001)
           )
+          and
+          (
+            sum(increase(billing_payment_requests_total{
+              operation="record_payment",outcome="error"
+            }[6h])) >= 2
+          )
         for: 5m
         labels:
           severity: warning
@@ -83,9 +100,10 @@ groups:
           slo: availability
         annotations:
           summary: "Billing payment availability error budget is burning"
-          description: "Error ratio exceeds 6x the 99.9% SLO budget over 6h and 30m."
-          runbook: "07-runbook.md"
+          description: "The payment error ratio exceeds 6x the 99.9% SLO budget in both 6h and 30m windows, with at least two errors in 6h."
+          runbook_url: "https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/blob/main/11-week/workshop/07-runbook.md"
 
+      # Diagnostic saturation alert, not an SLO burn-rate alert.
       - alert: BillingPaymentDatabaseSaturation
         expr: |
           (
@@ -101,8 +119,8 @@ groups:
           severity: warning
           service: billing
           journey: record_payment
-          slo: saturation
+          signal: saturation
         annotations:
           summary: "Billing database connection utilization is high"
-          description: "The Billing connection pool exceeds 85% utilization for 10 minutes."
-          runbook: "07-runbook.md"
+          description: "The proposed Billing connection pool exceeds 85% utilization for 10 minutes. Check whether payment latency or failures are affected."
+          runbook_url: "https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/blob/main/11-week/workshop/07-runbook.md"
