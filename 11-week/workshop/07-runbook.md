@@ -42,11 +42,83 @@ Do not include patient names, credentials, authentication tokens, payment-card d
 
 ## 4. Diagnosis - PromQL queries
 
-PromQL queries for payment traffic, availability burn rates, latency, PostgreSQL saturation, and `PaymentRecorded` event freshness will be incorporated in the next commit.
+All queries below require future Prometheus instrumentation described in `04-metrics.md`. They are not currently executable against a deployed Billing monitoring stack.
 
-The proposed metrics and thresholds are defined in `04-metrics.md`, `05-slo.md`, and `06-alerts.yml`.
+### Step A - Check payment traffic
 
-Production Prometheus instrumentation is not currently available.
+```promql
+sum(increase(billing_payment_requests_total{
+  operation="record_payment"
+}[1h]))
+```
+
+Low request counts can make percentage-based alerts misleading.
+
+### Step B - Check fast-burn error ratio
+
+```promql
+sum(rate(billing_payment_requests_total{
+  operation="record_payment",outcome="error"
+}[5m]))
+/
+clamp_min(sum(rate(billing_payment_requests_total{
+  operation="record_payment"
+}[5m])), 0.001)
+```
+
+The fast-burn threshold is 0.0144 (1.44%). Also confirm the 1h ratio exceeds this threshold and at least two errors occurred in 1h, as required by `06-alerts.yml`.
+
+### Step C - Check slow-burn error ratio
+
+```promql
+sum(rate(billing_payment_requests_total{
+  operation="record_payment",outcome="error"
+}[30m]))
+/
+clamp_min(sum(rate(billing_payment_requests_total{
+  operation="record_payment"
+}[30m])), 0.001)
+```
+
+The slow-burn threshold is 0.006 (0.6%). Also confirm the 6h ratio and at least two errors in 6h.
+
+### Step D - Check payment latency
+
+```promql
+sum(increase(billing_payment_duration_seconds_bucket{
+  operation="record_payment",
+  outcome=~"success|conflict",le="1"
+}[30d]))
+/
+clamp_min(sum(increase(billing_payment_duration_seconds_count{
+  operation="record_payment",
+  outcome=~"success|conflict"
+}[30d])), 1)
+```
+
+The proposed SLO requires at least 95% of eligible completed requests to finish within one second over 30 days.
+
+### Step E - Check PostgreSQL saturation
+
+```promql
+billing_db_connections_in_use{pool="billing"}
+/
+clamp_min(billing_db_connections_max{pool="billing"}, 1)
+```
+
+Utilization above 0.85 for 10 minutes triggers the proposed diagnostic saturation alert.
+
+### Step F - Check payment event publication
+
+```promql
+billing_outbox_oldest_pending_age_seconds{
+  event_type="PaymentRecorded"
+}
+```
+
+The proposed event-freshness SLO uses a 60-second threshold. Check pending counts separately with `billing_outbox_pending_events`.
+
+Missing metric samples require a separate telemetry-health investigation; missing data does not mean a healthy service.
 
 ## 5. Diagnosis - Logs and trace correlation
 
@@ -186,8 +258,6 @@ The incident report in `08-incident.md` must identify simulated evidence as hypo
 
 **Architecture references:** `07-api/contracts/openapi/billing-service.yaml`, `09-microservices/dependency-map.md`, and `09-microservices/communication-patterns.md`.
 
-**Defined:** Operational diagnosis, log correlation, three risk-ordered mitigations, escalation, and recovery checks.
-
-**Pending in this intermediate version:** Detailed PromQL diagnostic queries.
+**Defined:** Operational diagnosis, PromQL examples, log correlation, three risk-ordered mitigations, escalation, and recovery checks.
 
 **Not validated:** Production instrumentation, real alert delivery, deployed log search, backend payments, operational rollback, outbox recovery, and real incident response.
