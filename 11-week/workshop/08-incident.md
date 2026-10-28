@@ -18,7 +18,7 @@ No real incident, production fault injection, database measurement, or operation
 
 For 40 minutes, 25% of PostgreSQL dependency calls are assumed to take 3 seconds. The remaining 75% complete normally, with unspecified durations.
 
-For the illustrative scenario, a payment request may include a 3-second PostgreSQL call and still complete successfully.
+For the illustrative trace below, one payment request includes a 3-second PostgreSQL call and completes successfully in 3.2 seconds.
 
 A slow call does not automatically mean a failed payment.
 
@@ -36,21 +36,121 @@ The 40-minute incident can cause short-term latency degradation without necessar
 
 ## 3. Estimated traffic and incident impact
 
-The detailed calculation and synthetic sample will be incorporated in the next commit.
+CP6 uses these hypothetical clinic assumptions:
 
-The estimate must use the hypothetical traffic assumptions from CP6 and distinguish expected averages from real transaction counts.
+- Four dentists.
+- Eight appointments per dentist per day.
+- 70% of appointments generate a payment.
+- 1.2 payment attempts per payment.
+- Approximately 27 payment attempts per day.
+
+Assuming uniform traffic across 24 hours:
+
+`27 / 24 = 1.125 requests/hour`
+
+For 40 minutes:
+
+`1.125 x (40 / 60) = 0.75 expected requests`
+
+Assuming one dependency call per payment attempt:
+
+`0.75 x 0.25 = 0.1875 expected slow calls`
+
+These fractional values are expected averages, not observed transaction counts. The real outcome during a particular 40-minute interval could be zero, one, or more requests.
+
+The estimate also assumes uniform daily traffic, which is unlikely to represent actual clinic operating hours.
+
+### Separate illustrative sample
+
+To demonstrate the latency effect, consider a synthetic sample of 20 eligible payments, each using one PostgreSQL call:
+
+| Outcome | Simulated count |
+|---|---:|
+| Payment requests | 20 |
+| Slow dependency calls (25%) | 5 |
+| Normal dependency calls (75%) | 15 |
+| Successful HTTP responses | 20 |
+| HTTP 5xx failures | 0 |
+
+Assume the 15 normal requests finish within 1 second, while the five slow requests finish in 3.2 seconds.
+
+The illustrative latency compliance is:
+
+`15 / 20 = 75%`
+
+This is below the proposed 95% latency objective for this sample, but it does not establish failure of the rolling 30-day SLO.
+
+Availability for this sample is `20 / 20 = 100%`.
+
+This separate sample is not claimed to represent the expected natural traffic during the 40-minute incident.
 
 ## 4. Simulated distributed trace
 
-The illustrative trace, including parent-child spans and durations, will be incorporated in the next commit.
+The following is an illustrative trace, not a captured production trace.
 
-No production trace was captured.
+**Trace ID:** `0123456789abcdef0123456789abcdef`
+
+```text
+billing-api POST /api/v1/invoices/{id}/payments
+| trace_id: 0123456789abcdef0123456789abcdef
+| span_id: 1111111111111111
+| duration: 3200 ms
+|
++-- billing.validate_payment
+|   span_id: 2222222222222222
+|   parent: 1111111111111111
+|   duration: 70 ms
+|
++-- billing.postgresql.record_payment
+|   span_id: 3333333333333333
+|   parent: 1111111111111111
+|   duration: 3000 ms
+|
++-- billing.prepare_response
+    span_id: 4444444444444444
+    parent: 1111111111111111
+    duration: 30 ms
+```
+
+The remaining 100 ms represent illustrative processing overhead outside the listed child spans.
+
+The database span explains most of the simulated request duration. The payment still returns HTTP 201.
+
+Actual span propagation and backend instrumentation are not implemented in this workshop.
 
 ## 5. Four correlated JSON logs
 
-Four synthetic structured logs sharing one `trace_id` will be incorporated in the next commit.
+All four examples use the same 32-character `trace_id` and an illustrative correlation ID.
 
-No production logs or sensitive payment information are claimed.
+These records are synthetic and contain no patient names, credentials, card numbers, or payment payloads.
+
+### Log 1 - Request received
+
+```json
+{"timestamp":"2026-10-27T14:00:00.000Z","level":"INFO","service":"billing","trace_id":"0123456789abcdef0123456789abcdef","span_id":"1111111111111111","correlation_id":"billing-demo-001","operation":"record_payment","event":"payment.request.received"}
+```
+
+### Log 2 - Payment validation completed
+
+```json
+{"timestamp":"2026-10-27T14:00:00.070Z","level":"INFO","service":"billing","trace_id":"0123456789abcdef0123456789abcdef","span_id":"2222222222222222","correlation_id":"billing-demo-001","operation":"record_payment","event":"payment.validation.completed","duration_ms":70}
+```
+
+### Log 3 - Slow PostgreSQL operation
+
+```json
+{"timestamp":"2026-10-27T14:00:03.070Z","level":"WARN","service":"billing","trace_id":"0123456789abcdef0123456789abcdef","span_id":"3333333333333333","correlation_id":"billing-demo-001","operation":"record_payment","dependency":"postgres","event":"dependency.slow_call","duration_ms":3000}
+```
+
+### Log 4 - Payment request completed
+
+```json
+{"timestamp":"2026-10-27T14:00:03.200Z","level":"INFO","service":"billing","trace_id":"0123456789abcdef0123456789abcdef","span_id":"1111111111111111","correlation_id":"billing-demo-001","operation":"record_payment","event":"payment.request.completed","http_status":201,"duration_ms":3200}
+```
+
+A responder would filter by `trace_id`, order by timestamp, and identify the 3000 ms PostgreSQL span as the main latency contributor.
+
+The JSON examples are proposed diagnostic records, not proof of deployed logging.
 
 ## 6. Simulated incident timeline
 
@@ -75,8 +175,8 @@ The alert rules are defined in `06-alerts.yml`.
 
 | Alert | Evaluation under this scenario |
 |---|---|
-| `BillingPaymentAvailabilityFastBurn` | Does not fire if payment requests succeed because no payment errors occur |
-| `BillingPaymentAvailabilitySlowBurn` | Does not fire if payment requests succeed because no payment errors occur |
+| `BillingPaymentAvailabilityFastBurn` | Does not fire in the all-success sample because no payment errors occur |
+| `BillingPaymentAvailabilitySlowBurn` | Does not fire in the all-success sample because no payment errors occur |
 | `BillingPaymentDatabaseSaturation` | Cannot be determined without connection-pool utilization data |
 
 The fast and slow availability alerts additionally require at least two errors within their configured long windows.
@@ -93,19 +193,19 @@ For availability, CP6 proposes:
 
 `810 monthly requests x 0.001 = 0.81 allowed failed requests`
 
-When every payment succeeds:
+In the illustrative all-success sample:
 
 `failed requests = 0`
 
-`availability budget consumed by the successful sample = 0`
+`availability budget consumed by sample = 0`
 
-Slow requests may consume the latency budget even when the availability budget remains unaffected.
+For the proposed latency SLO, the synthetic sample has five slow requests out of 20. Its local violation rate is 25%, above the 5% target allowance.
 
-Actual monthly latency-budget consumption cannot be determined without observed 30-day request counts and durations.
+However, this does not provide the actual monthly latency-budget consumption because 30-day request counts and outcomes are unknown.
 
 For event freshness, no delayed-outbox measurements are available; its error-budget consumption cannot be calculated.
 
-Detailed synthetic calculations will be incorporated in the next commit.
+The purpose of this section is to distinguish measured, assumed, and unknown values.
 
 ## 9. Investigation and mitigation
 
@@ -199,10 +299,7 @@ As a Billing operator, I want authoritative outcome verification so that uncerta
 
 **Workshop evidence:** `01-journey.md`, `02-log-contract.md`, `04-metrics.md`, `05-slo.md`, `06-alerts.yml`, `06-alert-policy.md`, and `07-runbook.md`.
 
-**Defined in this intermediate version:** Hypothetical timeline, SLO and alert assessment, postmortem, and three testable user stories.
-
-**Pending for the next commit:** Detailed traffic estimates, synthetic sample, distributed trace, and four correlated JSON logs.
+**Completed:** Hypothetical timeline, illustrative trace, four correlated logs, conditional impact calculations, SLO and alert assessment, postmortem, and three testable user stories.
 
 **Not performed:** Live fault injection, production metrics collection, real PostgreSQL testing, payment execution, or operational incident recovery.
-
 
