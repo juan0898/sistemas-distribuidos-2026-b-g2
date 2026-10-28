@@ -1,133 +1,197 @@
-
-# CP7 — Billing Payment Alert Policy
+# CP7 - Billing Payment Alert Policy
 
 ## 1. Purpose and scope
 
 **Team:** DI LUCCA Dental Care & Technology  
 **Domain:** Billing  
-**Critical journey:** Record an invoice payment (HU-BIL-003)
+**Critical journey:** Record an invoice payment (HU-BIL-003)  
+**Endpoint:** `POST /api/v1/invoices/{id}/payments`
 
-This policy describes the proposed response to alerts affecting the Billing payment-recording journey.
+This policy defines proposed alert response, error-budget consumption, escalation, and noise-reduction rules for Billing.
 
-It complements:
+Related evidence: `04-metrics.md`, `05-slo.md`, `06-alerts.yml`, and `07-runbook.md`.
 
-- `05-slo.md` — service level objectives and error budgets.
-- `06-alerts.yml` — proposed Prometheus alerting rules.
-- `04-metrics.md` — metric definitions and PromQL queries.
+**Implementation status:** Academic design only. Alerts, notification channels, and on-call procedures have not been deployed or verified.
 
-**Implementation status:** This is an academic proposal. The alert rules are not deployed, and no production on-call schedule or notification channel has been confirmed.
+## 2. Availability SLO and burn rates
 
-## 2. Alert classification
+The proposed availability SLO is 99.9% over a rolling 30-day window.
 
-| Alert | Severity | Trigger | Proposed response |
+- Allowed error ratio: `1 - 0.999 = 0.001` (0.1%).
+- Fast burn: `14.4 x 0.001 = 0.0144` (1.44%).
+- Slow burn: `6 x 0.001 = 0.006` (0.6%).
+
+Only eligible infrastructure-related payment failures consume this budget. Documented business conflicts are correct outcomes, not server failures.
+
+## 3. Alert classification
+
+| Alert | Severity | Windows | Trigger |
 |---|---|---|---|
-| BillingPaymentAvailabilityFastBurn | Critical | Error ratio above 1.44% over 1h and 5m | Investigate immediately |
-| BillingPaymentAvailabilitySlowBurn | Warning | Error ratio above 0.6% over 6h and 30m | Investigate sustained failures |
-| BillingPaymentDatabaseSaturation | Warning | Database pool utilization above 85% for 10m | Review connection pressure |
+| BillingPaymentAvailabilityFastBurn | Critical | 1h and 5m | Error ratio > 1.44%; at least 2 errors in 1h |
+| BillingPaymentAvailabilitySlowBurn | Warning | 6h and 30m | Error ratio > 0.6%; at least 2 errors in 6h |
+| BillingPaymentDatabaseSaturation | Warning | 10m | PostgreSQL pool utilization > 85% |
 
-The burn-rate thresholds are derived from the proposed 99.9% availability SLO:
+Both availability alerts require their long and short windows to exceed the threshold simultaneously.
 
-- Error budget: `1 - 0.999 = 0.001`.
-- Fast burn: `14.4 × 0.001 = 0.0144`, or 1.44%.
-- Slow burn: `6 × 0.001 = 0.006`, or 0.6%.
+The saturation alert is diagnostic. It does not directly represent error-budget consumption.
 
-These values are alerting thresholds, not observed failure rates.
+## 4. Error-budget consumption at firing thresholds
 
-## 3. Proposed responsibilities
+A 30-day window contains:
 
-| Role | Responsibility |
-|---|---|
-| Billing service owner | Investigate payment processing failures |
-| Infrastructure operator | Check PostgreSQL, deployment, and monitoring availability |
-| Incident coordinator | Coordinate response and communicate impact |
-| Documentation owner | Record evidence, timeline, and follow-up actions |
+`30 x 24 = 720 hours`
 
-These are functional responsibilities rather than confirmed assignments to specific team members.
+The idealized budget fraction consumed at a constant burn rate is:
 
-## 4. Critical alert response
+`consumption = burn_rate x incident_duration / 720 hours`
 
-For `BillingPaymentAvailabilityFastBurn`:
+| Alert | Rate | Long window | Approximate 30-day budget consumed |
+|---|---:|---:|---:|
+| Fast burn | 14.4x | 1 hour | 2% |
+| Slow burn | 6x | 6 hours | 5% |
 
-1. Acknowledge the alert and record its start time.
-2. Check the payment error ratio and request volume.
-3. Inspect correlated structured logs and trace identifiers.
-4. Distinguish HTTP 5xx failures from expected HTTP 409 conflicts.
-5. Check PostgreSQL connectivity and recent deployments.
-6. Consider pausing risky changes while investigating.
-7. Escalate to the appropriate service or infrastructure owner.
-8. Record findings and recovery evidence.
+For the fast alert:
 
-**Proposed acknowledgment target:** within 5 minutes.
+`14.4 x 1 / 720 x 100 = 2%`
 
-This response target is not an existing operational commitment.
+For the slow alert:
 
-## 5. Warning alert response
+`6 x 6 / 720 x 100 = 5%`
+
+These are theoretical consumption levels at the threshold, not measured incident results. The actual percentage may be higher when the observed error ratio exceeds the threshold.
+
+The short windows confirm that the problem is continuing. They do not replace the long-window budget calculation.
+
+## 5. Traffic assumptions and noise reduction
+
+CP6 estimates approximately 27 eligible payment attempts per day and 810 over 30 days. These are hypothetical values, not production measurements.
+
+With low traffic, one error can generate an unusually high percentage. Therefore:
+
+- Fast burn requires at least 2 errors in 1h.
+- Slow burn requires at least 2 errors in 6h.
+- Both alerts require their respective long and short error-ratio conditions.
+- The evaluation duration is 2 minutes for fast burn and 5 minutes for slow burn.
+- Alerts must never use patient, invoice, payment, or trace identifiers as labels.
+
+The two-error gates reduce alert noise but can delay detection when traffic is very low. They are initial design decisions that require calibration using actual request volume.
+
+A single failed eligible payment should still be visible through metrics and incident investigation, even when neither alert fires.
+
+Missing telemetry must be monitored separately; an absent time series is not proof of healthy service operation.
+
+## 6. Proposed recipients and communication channels
+
+| Severity | Responsible role | Proposed channel | Expected action |
+|---|---|---|---|
+| Critical | Billing service owner and infrastructure operator | Team emergency notification channel | Immediate investigation |
+| Warning: slow burn | Billing service owner | Issue tracker and team channel | Tracked reliability investigation |
+| Warning: saturation | Infrastructure operator | Issue tracker and team channel | Check connection pressure |
+
+The emergency notification channel and issue tracker are proposed communication mechanisms, not confirmed integrations.
+
+**Proposed acknowledgment targets:**
+
+- Critical: 5 minutes.
+- Warning: 30 minutes.
+
+If a critical alert remains unacknowledged, the incident coordinator should be notified through the agreed team process.
+
+No specific operator, rotation, paging service, or notification address is assumed to exist.
+
+## 7. Fast-burn response
+
+When `BillingPaymentAvailabilityFastBurn` fires:
+
+1. Record the alert timestamp and current error ratio.
+2. Verify the request volume and the two-error condition.
+3. Inspect structured logs and correlated `trace_id` values.
+4. Separate expected HTTP 409 business conflicts from infrastructure errors.
+5. Investigate PostgreSQL connectivity and recent deployment changes.
+6. Assess whether payment completion is uncertain after any timeout.
+7. Coordinate low-risk mitigation with the appropriate owner.
+8. Record incident evidence and reassess the remaining error budget.
+
+Follow the proposed steps in `07-runbook.md`.
+
+Do not automatically repeat payment requests with uncertain outcomes.
+
+## 8. Slow-burn and saturation response
 
 For `BillingPaymentAvailabilitySlowBurn`:
 
-1. Confirm that the condition persists in both alert windows.
-2. Review error trends and recent application changes.
-3. Check whether failures affect particular dependencies.
-4. Estimate error-budget consumption.
-5. Plan a corrective action before the condition worsens.
-
-**Proposed acknowledgment target:** within 30 minutes.
+1. Confirm both 6h and 30m windows exceed the threshold.
+2. Review error codes, traffic, latency, and dependency failures.
+3. Estimate accumulated budget consumption.
+4. Create a reliability task and assign a responsible role.
+5. Escalate if payment processing deteriorates.
 
 For `BillingPaymentDatabaseSaturation`:
 
-1. Check active database connections and configured pool limits.
-2. Review payment request volume and connection acquisition delays.
-3. Investigate slow queries or transactions holding connections.
-4. Verify that connections are released correctly.
-5. Coordinate capacity or application changes when necessary.
+1. Review connections in use and maximum pool capacity.
+2. Investigate slow queries and long-lived transactions.
+3. Compare connection pressure with actual payment latency and errors.
+4. Coordinate corrective action with the infrastructure owner.
 
-Do not increase database connection limits without evaluating PostgreSQL capacity.
+Do not increase PostgreSQL connection limits without evaluating database capacity.
 
-## 6. Alert routing and escalation
+## 9. Two cause-based alerts intentionally excluded
 
-Proposed routing:
+### CPU utilization above 90%
 
-- `critical` alerts: notify the responsible Billing and infrastructure operators.
-- `warning` alerts: create a tracked investigation for the responsible team.
-- Unacknowledged critical alerts: escalate to the incident coordinator.
-- Repeated warnings: review trends and consider a reliability improvement task.
+A high CPU reading does not necessarily mean payment recording is failing.
 
-No email address, paging platform, or on-call rotation is assumed to exist.
+It may be useful for diagnosis but should not automatically page the Billing owner without evidence of user impact.
 
-## 7. Noise reduction and safety
+### RabbitMQ queue depth above a fixed threshold
 
-- Require both long and short burn-rate windows before firing.
-- Apply the `for` durations defined in `06-alerts.yml`.
-- Avoid alerts based on individual invoice or patient identifiers.
-- Investigate low-traffic periods before trusting ratios.
-- Group related alerts by service and journey.
-- Do not suppress critical payment failures solely because another alert is firing.
+A temporary queue increase can be normal during asynchronous processing and does not prove that payment recording is unavailable.
 
-The current expressions do not include an explicit minimum-request-volume gate. A future production configuration should evaluate one to reduce low-volume noise.
+A fixed queue-depth threshold is therefore excluded from the primary paging policy. Event publication should instead be evaluated with the proposed freshness SLO in `05-slo.md`.
 
-## 8. Recovery and closure criteria
+Both signals may support investigation, but the primary availability alerts focus on failed payment operations.
 
-Close an incident only after:
+## 10. Error-budget operational policy
 
-1. The relevant alert condition has cleared.
-2. Payment processing has been verified through authorized checks.
-3. Error rates and latency have returned to acceptable levels.
-4. Any affected payment transactions have been reviewed for consistency.
-5. Evidence, timeline, and follow-up actions have been documented.
+| Consumed 30-day budget | Proposed action |
+|---|---|
+| 50% | Review failures in the daily meeting and assign an investigation |
+| 75% | Prioritize reliability improvements and restrict risky payment changes |
+| 100% | Freeze nonessential payment feature releases pending recovery and review |
 
-A cleared alert alone does not prove that every affected payment was correctly recorded.
+These actions are proposed. They are not existing release controls.
 
-## 9. Documentation alignment
+The CP6 example allows only 0.81 failed requests over 810 hypothetical requests. One eligible infrastructure failure would already exceed that illustrative availability budget.
 
-The policy is informed by:
+This low-volume behavior should be considered when calibrating the SLO and alert policy.
 
-1. `07-api/contracts/openapi/billing-service.yaml` — payment recording, HTTP 201 and 409 responses, and business conflict rules.
-2. `09-microservices/dependency-map.md` — Billing dependencies, including PostgreSQL and RabbitMQ.
-3. `09-microservices/communication-patterns.md` — synchronous REST operations, asynchronous payment events, and independent notification handling.
+## 11. Validation and recovery
 
-## 10. Validation status
+Before production deployment, validate the YAML with:
 
-**Defined:** alert severities, proposed response targets, functional responsibilities, escalation, and closure criteria.
+`promtool check rules 11-week/workshop/06-alerts.yml`
 
-**Not validated:** Prometheus evaluation, alert notification delivery, on-call readiness, response-time compliance, or real incidents.
-s
+Also test the PromQL expressions with synthetic request counters, including normal behavior, one failure, two failures, missing metrics, and low-volume periods.
+
+This validation command is a proposed procedure; successful execution is not claimed here.
+
+Close an incident only when:
+
+1. Relevant alert conditions have cleared.
+2. Authorized payment checks confirm expected behavior.
+3. Error and latency indicators have recovered.
+4. Ambiguous payment outcomes have been investigated.
+5. The timeline, evidence, and follow-up actions are documented.
+
+## 12. Documentation references
+
+1. `07-api/contracts/openapi/billing-service.yaml` - Payment recording and documented HTTP business conflicts.
+2. `09-microservices/dependency-map.md` - Billing infrastructure dependencies.
+3. `09-microservices/communication-patterns.md` - Synchronous payment processing and asynchronous event publication.
+
+## 13. Validation status
+
+**Defined:** Burn-rate thresholds, budget calculations, recipients by role, proposed channels, two excluded cause-based alerts, traffic safeguards, and recovery conditions.
+
+**Not validated:** Prometheus rules execution, real request volumes, production paging, acknowledgment times, notification delivery, or operational recovery.
+
