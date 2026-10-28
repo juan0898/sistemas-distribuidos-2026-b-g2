@@ -1,163 +1,208 @@
-
 # CP9 - Billing Payment Incident Simulation
 
 ## 1. Incident overview
 
 **Team:** DI LUCCA Dental Care & Technology  
 **Domain:** Billing  
-**Journey:** Record an invoice payment (HU-BIL-003)  
-**Incident type:** Simulated dependency latency degradation  
+**Critical journey:** Record an invoice payment (HU-BIL-003)  
+**Endpoint:** `POST /api/v1/invoices/{id}/payments`  
+**Incident type:** Simulated synchronous dependency latency  
 **Duration:** 40 minutes  
-**Status:** Hypothetical exercise; no production incident occurred.
-**Current implementation:** The Billing frontend currently uses static or in-memory demonstration data. It is not connected to a functional Billing backend or PostgreSQL database. The dependency slowdown described in this document is a hypothetical scenario, not an incident observed in the application.
+**Status:** Hypothetical academic exercise
+
+The Billing frontend currently uses static or in-memory demonstration data. It is not connected to a functional payment backend or PostgreSQL instance.
+
+No real incident, production fault injection, database measurement, or operational recovery occurred.
 
 ### Scenario
 
-During a 40-minute period, 25% of calls to a synchronous dependency take 3 seconds. For this exercise, the affected dependency is assumed to be PostgreSQL during payment processing.
+For 40 minutes, 25% of PostgreSQL dependency calls are assumed to take 3 seconds. The remaining 75% complete normally, with unspecified durations.
 
-This dependency choice is a simulation assumption, not an observed Billing failure.
+For the illustrative scenario, a payment request may include a 3-second PostgreSQL call and still complete successfully.
 
-The remaining 75% of dependency calls are assumed to behave normally, but their exact response times are unknown.
+A slow call does not automatically mean a failed payment.
 
-## 2. Expected impact
+## 2. Connection with CP6
 
-The critical journey requires validation and an authoritative payment transaction before returning the HTTP response.
-
-Potential consequences include:
-
-- Increased payment request latency.
-- Payment requests exceeding the proposed 1-second latency objective.
-- Connection-pool pressure if operations occupy resources longer.
-- Possible request timeouts if configured limits are exceeded.
-- Repeated submissions if operators do not know the transaction outcome.
-
-A slow dependency call does not automatically imply a failed payment.
-
-The simulation does not specify request volume, timeout configuration, or baseline latency. Therefore, the number of failed payments and the actual error rate cannot be calculated.
-
-## 3. SLO impact assessment
-
-| Proposed SLO | Target | Expected risk |
+| SLO | Proposed target | Simulated impact |
 |---|---|---|
-| Availability | 99.9% over 30 days | At risk only if requests fail or time out |
-| Latency | 95% within 1 second | Likely affected by 3-second dependency calls |
-| Reliability | 99.95% over 30 days | At risk if infrastructure failures prevent commits |
+| Availability | 99.9% correct outcomes over 30 days | No violation if slow requests still succeed |
+| Latency | 95% completed within 1 second over 30 days | At risk because some calls take 3 seconds |
+| Event freshness | 99% of observed minutes with oldest pending `PaymentRecorded` age <= 60 seconds | No proven impact without event-backlog data |
 
-If each slow call belongs to one distinct eligible payment request, and no other delays are present, at least those affected requests would exceed 1 second.
+These SLOs match `05-slo.md`.
 
-This is a conditional illustration, not a measured 25% end-to-end latency violation.
+The 40-minute incident can cause short-term latency degradation without necessarily causing a 30-day SLO violation.
 
-No actual monthly error-budget consumption can be determined without request counts and outcomes.
+## 3. Estimated traffic and incident impact
 
-## 4. Simulated incident timeline
+The detailed calculation and synthetic sample will be incorporated in the next commit.
 
-| Time | Event |
+The estimate must use the hypothetical traffic assumptions from CP6 and distinguish expected averages from real transaction counts.
+
+## 4. Simulated distributed trace
+
+The illustrative trace, including parent-child spans and durations, will be incorporated in the next commit.
+
+No production trace was captured.
+
+## 5. Four correlated JSON logs
+
+Four synthetic structured logs sharing one `trace_id` will be incorporated in the next commit.
+
+No production logs or sensitive payment information are claimed.
+
+## 6. Simulated incident timeline
+
+| Time | Hypothetical activity |
 |---|---|
-| T+00 | Simulated dependency latency degradation begins |
-| T+05 | Payment latency dashboard would show elevated durations if instrumented |
-| T+10 | Operator starts checking traces, logs, and database pressure |
-| T+15 | Team investigates connection usage and slow transactions |
-| T+20 | Team reviews safe mitigation and avoids blind payment retries |
-| T+30 | Team checks whether timeouts or failed transactions occurred |
-| T+40 | Injected latency condition ends |
-| T+45 | Team verifies payment consistency and pending events |
-| T+60 | Hypothetical incident review and follow-up planning |
+| T+00 | Dependency degradation begins |
+| T+05 | Latency measurements begin showing elevated values, if traffic occurs |
+| T+10 | Billing owner reviews request counts and duration histograms |
+| T+15 | Database spans and structured logs are correlated |
+| T+20 | PostgreSQL saturation and recent changes are investigated |
+| T+25 | Team considers low-risk mitigation |
+| T+30 | Payment outcomes and possible timeouts are reviewed |
+| T+40 | Simulated degradation ends |
+| T+45 | Payment consistency and event freshness are checked |
+| T+60 | Postmortem and improvement backlog are prepared |
 
-These are illustrative exercise milestones, not recorded timestamps.
+These milestones represent planned exercise activities, not measured response times.
 
-## 5. Detection and alert evaluation
+## 7. Alert evaluation
 
-Useful signals from `04-metrics.md` include:
+The alert rules are defined in `06-alerts.yml`.
 
-- `billing_payment_duration_seconds` for payment latency.
-- `billing_dependency_duration_seconds` for dependency latency.
-- `billing_db_connections_in_use` for database pressure.
-- `billing_payment_requests_total` for payment outcomes.
+| Alert | Evaluation under this scenario |
+|---|---|
+| `BillingPaymentAvailabilityFastBurn` | Does not fire if payment requests succeed because no payment errors occur |
+| `BillingPaymentAvailabilitySlowBurn` | Does not fire if payment requests succeed because no payment errors occur |
+| `BillingPaymentDatabaseSaturation` | Cannot be determined without connection-pool utilization data |
 
-The `BillingPaymentAvailabilityFastBurn` and `BillingPaymentAvailabilitySlowBurn` alerts are based on payment error ratios, not latency alone.
+The fast and slow availability alerts additionally require at least two errors within their configured long windows.
 
-**Neither burn-rate alert is guaranteed to fire** in this scenario because the exercise describes slow calls but does not establish failed requests.
+If some slow operations timed out, their effect would depend on actual timeout settings, error classifications, traffic, and the two alert windows. None of those failure counts is established by the scenario.
 
-The database saturation alert fires only if connection utilization exceeds 85% for its configured duration.
+A 3-second database call alone is insufficient evidence of an HTTP 5xx response or a database saturation alert.
 
-A dedicated latency SLO alert would be a useful future addition.
+A separate latency alert is proposed as future work.
 
-## 6. Investigation and mitigation
+## 8. Error-budget assessment
 
-1. Confirm the time window and affected payment operation.
-2. Review latency histograms and request traffic.
-3. Correlate payment logs using trace identifiers.
-4. Identify slow database calls and long-running transactions.
-5. Review PostgreSQL connection-pool usage.
-6. Check timeout settings and recent deployment changes.
-7. Avoid retrying uncertain payment transactions without verifying their outcome.
-8. Coordinate safe mitigation with the responsible service owner.
-9. Verify invoices, payment records, and asynchronous events.
-10. Document evidence and outstanding risks.
+For availability, CP6 proposes:
 
-The exercise does not claim that any command was executed against a real database.
+`810 monthly requests x 0.001 = 0.81 allowed failed requests`
 
-## 7. Postmortem - hypothetical findings
+When every payment succeeds:
 
-**Summary:** A simulated slowdown affected one synchronous dependency during payment recording.
+`failed requests = 0`
 
-**Trigger:** Artificial 3-second latency applied to 25% of dependency calls.
+`availability budget consumed by the successful sample = 0`
 
-**Potential contributing factors:**
+Slow requests may consume the latency budget even when the availability budget remains unaffected.
 
-- Synchronous payment processing depends on database response time.
-- Long-running calls can increase resource occupation.
-- Insufficient latency alerting could delay diagnosis.
+Actual monthly latency-budget consumption cannot be determined without observed 30-day request counts and durations.
 
-**What helped in the exercise:**
+For event freshness, no delayed-outbox measurements are available; its error-budget consumption cannot be calculated.
 
-- The payment journey identified the critical synchronous boundary.
-- The proposed metric catalog identified relevant latency and saturation signals.
-- The runbook outlined safe investigation and recovery steps.
+Detailed synthetic calculations will be incorporated in the next commit.
 
-**Remaining uncertainty:** No actual trace capture, database measurement, payment failure count, or incident response time was observed.
+## 9. Investigation and mitigation
 
-## 8. Improvement backlog - three user stories
+Following `07-runbook.md`:
+
+1. Verify payment traffic and the duration histogram.
+2. Check the fast and slow availability error ratios.
+3. Search correlated logs by `trace_id`.
+4. Identify the slow PostgreSQL span.
+5. Review connection-pool utilization and dependency failures.
+6. Verify authoritative payment and invoice state.
+7. Check pending `PaymentRecorded` event age.
+8. Avoid repeating payments with uncertain outcomes.
+9. Record evidence and responsible roles.
+
+### Risk-ordered mitigations
+
+**Low risk:** Pause nonessential deployments, preserve evidence, and investigate the dependency.
+
+**Medium risk:** Prepare an authorized application correction or rollback only if a tested procedure exists.
+
+**High risk:** Recover a failing database or pending-event mechanism only through verified, idempotent operational procedures.
+
+The workshop has not demonstrated production rollback, database recovery, or event replay.
+
+## 10. Postmortem
+
+**Incident classification:** Hypothetical dependency latency degradation.
+
+**Trigger:** Assumed 3-second PostgreSQL calls affecting 25% of dependency operations.
+
+**User impact:** Potentially slower payment confirmation. No demonstrated payment loss or duplicate charge.
+
+**Probable mechanism:** A synchronous database operation extends end-to-end payment duration.
+
+**Detection gap:** The two configured burn-rate alerts track failures rather than successful but slow payments.
+
+**What worked in the exercise:** The proposed trace, bounded metrics, and log correlation identify where latency accumulates.
+
+**What remains unverified:** Real database behavior, timeouts, volume, monitoring, event publication, and recovery actions.
+
+**Preventive decision:** Prioritize dependency-latency visibility and safe transaction-outcome verification before production rollout.
+
+## 11. Improvement backlog
 
 ### HU-OBS-001 - Dependency latency visibility
 
-As a Billing operator, I want a bounded-label dependency latency histogram so that I can identify slow PostgreSQL operations.
+As a Billing operator, I want bounded-label dependency histograms so that I can identify slow PostgreSQL payment operations.
 
-**Acceptance criteria:**
-- Record dependency durations in seconds.
-- Expose histogram buckets and request counts.
-- Exclude invoice, patient, and payment IDs from metric labels.
+**Given** a simulated payment dependency call,  
+**When** its duration is recorded,  
+**Then** the metric exposes seconds-based histogram buckets and counts using only approved bounded labels.
 
-### HU-OBS-002 - Latency-based alerting
+**Given** a payment request containing sensitive identifiers,  
+**When** the dependency metric is emitted,  
+**Then** invoice IDs, payment IDs, patient IDs, and trace IDs are not used as metric labels.
 
-As an incident responder, I want an alert for sustained payment latency violations so that slow transactions are investigated before availability deteriorates.
+### HU-OBS-002 - Sustained latency alert
 
-**Acceptance criteria:**
-- Evaluate the proposed 1-second latency threshold.
-- Use both a sustained window and minimum request-volume safeguard.
-- Link the alert to the Billing incident runbook.
+As an incident responder, I want sustained latency alerting so that payment degradation is detected before availability fails.
+
+**Given** sufficient eligible payment traffic,  
+**When** the proportion of responses exceeding 1 second remains above the configured threshold for the required windows,  
+**Then** a warning is generated with a link to the Billing runbook.
+
+**Given** insufficient request volume,  
+**When** the latency percentage becomes unstable,  
+**Then** the alert follows an explicitly documented low-volume safeguard.
+
+The precise warning thresholds and evaluation windows require a separate design review; they are not implemented in CP7.
 
 ### HU-OBS-003 - Safe payment recovery verification
 
-As a Billing operator, I want a documented payment-outcome verification procedure so that retries do not duplicate committed payments.
+As a Billing operator, I want authoritative outcome verification so that uncertain responses do not cause duplicate payments.
 
-**Acceptance criteria:**
-- Verify authoritative payment and invoice state before retrying.
-- Respect existing idempotency and version-conflict rules.
-- Include checks for pending `PaymentRecorded` events.
+**Given** a payment operation ending in a timeout,  
+**When** an operator investigates the transaction,  
+**Then** the existing payment and invoice state is verified before any retry.
 
-## 9. Documentation and evidence
+**Given** an already committed payment,  
+**When** the operator reviews asynchronous processing,  
+**Then** pending `PaymentRecorded` publication and idempotency guarantees are checked without recording the payment again.
 
-1. `07-api/contracts/openapi/billing-service.yaml` - HU-BIL-003, payment recording, conflict handling, and successful responses.
-2. `09-microservices/dependency-map.md` - PostgreSQL and other Billing dependencies.
-3. `09-microservices/communication-patterns.md` - synchronous REST boundaries and asynchronous payment events.
+## 12. Documentation and validation
 
-Workshop references: `01-journey.md`, `04-metrics.md`, `05-slo.md`, `06-alerts.yml`, and `07-runbook.md`.
+**Architecture references:**
 
-## 10. Validation status
+1. `07-api/contracts/openapi/billing-service.yaml` - HU-BIL-003 payment recording.
+2. `09-microservices/dependency-map.md` - Billing dependencies.
+3. `09-microservices/communication-patterns.md` - REST and asynchronous events.
 
-**Completed:** hypothetical scenario analysis, timeline, expected SLO impact, alert review, postmortem, and three improvement stories.
+**Workshop evidence:** `01-journey.md`, `02-log-contract.md`, `04-metrics.md`, `05-slo.md`, `06-alerts.yml`, `06-alert-policy.md`, and `07-runbook.md`.
 
-**Not performed:** live fault injection, production monitoring, real payment attempts, or database recovery.
+**Defined in this intermediate version:** Hypothetical timeline, SLO and alert assessment, postmortem, and three testable user stories.
+
+**Pending for the next commit:** Detailed traffic estimates, synthetic sample, distributed trace, and four correlated JSON logs.
+
+**Not performed:** Live fault injection, production metrics collection, real PostgreSQL testing, payment execution, or operational incident recovery.
 
 
