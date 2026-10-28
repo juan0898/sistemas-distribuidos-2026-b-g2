@@ -1,5 +1,4 @@
-
-# CP8 — Billing Payment Incident Runbook
+# CP8 - Billing Payment Incident Runbook
 
 ## 1. Purpose and scope
 
@@ -8,150 +7,187 @@
 **Critical journey:** Record an invoice payment (HU-BIL-003)  
 **Endpoint:** `POST /api/v1/invoices/{id}/payments`
 
-This runbook proposes procedures for detecting, investigating, mitigating, and recovering from failures affecting payment recording.
+This runbook describes proposed detection, investigation, mitigation, escalation, and recovery procedures for the Billing payment-recording journey.
 
-**Status:** Academic operational guide. The Billing backend, Prometheus alerts, and production tracing have not been integrated or validated.
+**Implementation status:** Academic operational design. The Billing frontend currently uses demonstration data. Production payment processing, PostgreSQL monitoring, Prometheus alerting, and centralized tracing have not been validated.
 
-## 2. Incident triggers
+The procedures below are not evidence of an operational production environment.
 
-| Signal | Possible problem | Initial priority |
+## 2. Incident triggers and ownership
+
+| Trigger | Severity | Initial owner |
 |---|---|---|
-| `BillingPaymentAvailabilityFastBurn` | Rapid payment error-budget consumption | Critical |
-| `BillingPaymentAvailabilitySlowBurn` | Sustained payment failures | Warning |
-| `BillingPaymentDatabaseSaturation` | PostgreSQL connection pressure | Warning |
-| Unexpected HTTP 5xx | Internal or dependency failure | Assess impact |
-| Repeated HTTP 409 | Concurrency or idempotency conflicts | Investigate pattern |
+| `BillingPaymentAvailabilityFastBurn` | Critical | Billing service owner |
+| `BillingPaymentAvailabilitySlowBurn` | Warning | Billing service owner |
+| `BillingPaymentDatabaseSaturation` | Warning | Infrastructure operator |
+| Payment outcome uncertain after timeout | Assess immediately | Billing service owner |
+| Delayed `PaymentRecorded` publication | Assess event impact | Billing and messaging owners |
 
-A documented HTTP 409 response is not automatically an infrastructure incident.
+The infrastructure operator supports database and messaging investigations. The incident coordinator manages escalation and communications. These are proposed roles, not confirmed staff assignments.
+
+**Proposed acknowledgment targets:** 5 minutes for critical alerts and 30 minutes for warnings.
 
 ## 3. First-response checklist
 
 1. Record the alert name, detection time, and affected journey.
-2. Identify the responsible Billing and infrastructure contacts.
-3. Confirm whether payment recording is currently affected.
-4. Review request traffic, error ratio, and latency.
-5. Check recent deployments or configuration changes.
-6. Inspect structured logs using trace and correlation identifiers.
-7. Identify the failing dependency or application operation.
-8. Record findings before applying mitigation.
+2. Assign the responsible role and record who acknowledged the incident.
+3. Identify whether errors, latency, or publication delays affect users.
+4. Verify request volume before interpreting percentages.
+5. Compare the 1h/5m and 6h/30m alert conditions.
+6. Inspect structured logs using `trace_id` and `correlation_id`.
+7. Check dependencies and recent application changes.
+8. Preserve evidence before applying a mitigation.
 
-Never include patient names, authentication tokens, or sensitive payment information in incident notes.
+Do not include patient names, credentials, authentication tokens, payment-card details, or sensitive transaction payloads in incident records.
 
-## 4. Diagnosis: payment processing failure
+## 4. Diagnosis - PromQL queries
 
-### Step A — Verify the HTTP outcome
+PromQL queries for payment traffic, availability burn rates, latency, PostgreSQL saturation, and `PaymentRecorded` event freshness will be incorporated in the next commit.
 
-- HTTP 201: payment recording succeeded.
-- HTTP 409: inspect documented business conflicts.
-- HTTP 5xx: investigate application and dependency failures.
-- Timeout: verify whether the payment committed before retrying.
+The proposed metrics and thresholds are defined in `04-metrics.md`, `05-slo.md`, and `06-alerts.yml`.
 
-Do not assume a timeout means the payment was not recorded.
+Production Prometheus instrumentation is not currently available.
 
-### Step B — Inspect trace and log context
+## 5. Diagnosis - Logs and trace correlation
 
-Search the proposed structured logs for:
+Use the structured logging fields from `02-log-contract.md`.
 
-- `trace_id` and `correlation_id`
-- payment operation and event name
-- HTTP status and error code
-- duration and dependency failure information
+Example simulated investigation:
 
-Correlate related operations using the same trace ID.
+1. Identify the `trace_id` associated with a failed payment.
+2. Find all records sharing that identifier.
+3. Sort those records by timestamp.
+4. Follow the request through payment validation and dependency access.
+5. Identify the first failure and distinguish it from later consequences.
 
-The CP3 prototype demonstrates these fields locally but does not provide a deployed trace collector or searchable production logs.
+Example illustrative log search for a local JSON-lines export:
 
-### Step C — Check dependencies
+```powershell
+Get-Content .\billing-logs.jsonl | Select-String '"trace_id":"0123456789abcdef0123456789abcdef"'
+```
+
+The example file is not part of the deployed system. Use this command only if an appropriately redacted local log export exists.
+
+Do not assume a payment failed because its HTTP response timed out. The database transaction might already have committed.
+
+## 6. Diagnosis - Payment outcomes
+
+| Outcome | Interpretation | Action |
+|---|---|---|
+| HTTP 201 | Payment recorded | Verify invoice and payment state if needed |
+| HTTP 409 | Documented business rejection | Inspect error code; do not count as infrastructure failure |
+| HTTP 5xx | Server or dependency failure | Investigate application and infrastructure |
+| Timeout | Transaction result uncertain | Verify authoritative state before retrying |
+
+Relevant documented conflicts include `STALE_VERSION`, `IDEMPOTENCY_CONFLICT`, `INVOICE_NOT_PAYABLE`, and `PAYMENT_EXCEEDS_BALANCE`.
+
+Never bypass concurrency protections, edit balances manually, or retry an uncertain payment without confirmation of its previous result.
+
+## 7. Dependency investigation
 
 | Dependency | Diagnostic question |
 |---|---|
-| PostgreSQL | Are connections exhausted or transactions blocked? |
-| Authentication | Is the request authorized correctly? |
-| Patients | Is a required patient interaction failing? |
-| RabbitMQ / outbox | Are committed payment events awaiting publication? |
-| Notification worker | Did email delivery fail after the payment committed? |
+| PostgreSQL | Are connections exhausted, queries blocked, or transactions delayed? |
+| Authentication | Are valid requests being authorized correctly? |
+| Patients | Is a documented dependency failing? |
+| Outbox / RabbitMQ | Are committed `PaymentRecorded` events pending publication? |
+| Notification worker | Are messages failing after payment commit? |
 
-Use the dependency map to distinguish required synchronous steps from asynchronous follow-up work.
+Confirm the actual synchronous and asynchronous paths against the project documentation before modifying any dependency.
 
-## 5. Scenario: HTTP 409 business conflict
+A notification delivery failure must not reverse a committed payment.
 
-Check the error code:
+## 8. Three mitigations ordered by risk
 
-- `STALE_VERSION`: the invoice version is outdated.
-- `IDEMPOTENCY_CONFLICT`: the idempotency key conflicts with another request.
-- `INVOICE_NOT_PAYABLE`: the invoice is not in a payable state.
-- `PAYMENT_EXCEEDS_BALANCE`: the amount exceeds the remaining balance.
+### Mitigation 1 - Low risk: stabilize and investigate
 
-Actions:
+**Owner:** Billing service owner.
 
-1. Confirm the error corresponds to the documented business rule.
-2. Review the request outcome without exposing sensitive data.
-3. Avoid changing invoice balances manually.
-4. Explain the valid corrective action to the authorized operator.
-5. Escalate unexpected conflict spikes for investigation.
+- Pause nonessential payment-related deployments.
+- Record failing operations, metrics, logs, and recent changes.
+- Preserve transaction state without attempting unsafe retries.
 
-Do not bypass invoice concurrency or idempotency protections.
+**Verification:** No additional risky change is introduced; the incident timeline and affected operations are identified.
 
-## 6. Scenario: PostgreSQL saturation or timeout
+This is a proposed coordination action that does not require a deployed rollback mechanism.
 
-1. Review `billing_db_connections_in_use` and configured capacity.
-2. Inspect connection acquisition delays and long transactions.
-3. Check whether payment operations are holding locks.
-4. Review recent traffic spikes and application changes.
-5. Coordinate safe mitigation with the infrastructure owner.
-6. Verify payment consistency before considering any retry.
+### Mitigation 2 - Medium risk: controlled application correction
 
-Never increase connection limits blindly or rerun an uncertain payment without checking its existing outcome.
+**Owner:** Billing service owner with infrastructure support.
 
-## 7. Scenario: event or notification failure
+- Identify whether a recent deployment caused the regression.
+- Prepare a correction or rollback only if an authorized, tested deployment procedure exists.
+- Validate the expected payment behavior and error indicators afterward.
 
-After a payment has committed:
+**Verification:** The affected operation passes authorized checks without duplicate payments or invoice inconsistency.
 
-1. Confirm the authoritative payment and invoice state.
-2. Check whether `PaymentRecorded` was persisted for publication.
-3. Inspect outbox backlog and RabbitMQ connectivity.
-4. Check notification worker failures separately.
-5. Use approved retry mechanisms only after verifying idempotency.
-6. Record delayed events or notifications for follow-up.
+**Current limitation:** A production Billing rollback procedure has not been demonstrated in this workshop.
 
-A failed notification must not reverse a successfully committed payment.
+### Mitigation 3 - High risk: dependency or event recovery
 
-## 8. Mitigation and escalation
+**Owner:** Infrastructure and Billing service owners.
 
-- Pause risky deployments if critical payment failures continue.
-- Involve the Billing service owner for application issues.
-- Involve infrastructure support for PostgreSQL or messaging failures.
-- Preserve logs, timestamps, and trace identifiers.
-- Document any operational action and its observed result.
-- Escalate if the cause is unknown or consistency is uncertain.
+- Investigate PostgreSQL availability, locks, and connection limits.
+- Recover messaging or pending events only using verified, idempotent mechanisms.
+- Reconcile payment and event state before considering any replay.
 
-These are proposed responsibilities, not an established on-call procedure.
+**Verification:** Payment records remain consistent, required events are published once logically, and no unintended duplicate effect occurs.
 
-## 9. Recovery verification
+**Current limitation:** Database recovery, outbox replay, and message-reprocessing procedures are proposals, not verified operational capabilities.
 
-Before closing the incident:
+Never increase connection limits blindly or manually replay a payment transaction with an uncertain outcome.
 
-1. Confirm the alert condition has cleared.
-2. Verify authorized payment requests complete as expected.
-3. Check latency and error trends against the proposed SLOs.
-4. Verify invoice balances and payment records are consistent.
-5. Check pending events and delayed notifications.
-6. Record the recovery time and supporting evidence.
-7. Open follow-up tasks for unresolved risks.
+## 9. Escalation procedure
 
-Alert recovery alone does not prove transactional consistency.
+1. **Critical alert:** Billing service owner investigates immediately; infrastructure operator assists if a dependency is involved.
+2. **Unacknowledged critical alert:** Notify the incident coordinator after the proposed five-minute acknowledgment target.
+3. **Persistent warning:** Create an assigned reliability investigation and review impact.
+4. **Uncertain payment consistency:** Escalate before performing retries, database changes, or event reprocessing.
+5. **Missing monitoring data:** Investigate telemetry availability separately from application health.
 
-## 10. Documentation references
+Channels, incident ownership, and response times remain proposed until approved by the team.
 
-1. `07-api/contracts/openapi/billing-service.yaml` — payment recording endpoint, HTTP responses, and documented conflict codes.
-2. `09-microservices/dependency-map.md` — Billing service dependencies and infrastructure.
-3. `09-microservices/communication-patterns.md` — synchronous processing, `PaymentRecorded` events, and notification separation.
+## 10. Measurable recovery criteria
 
-Related workshop artifacts: `01-journey.md`, `02-log-contract.md`, `05-slo.md`, `06-alerts.yml`, and `06-alert-policy.md`.
+Recovery should be assessed using these proposed checks:
 
-## 11. Validation and limitations
+| Check | Recovery condition |
+|---|---|
+| Availability | Recent eligible errors return to zero or an explicitly accepted baseline |
+| Alert state | Fast/slow burn conditions clear after their configured windows |
+| Latency | Recent completed payments meet the 1-second threshold at an acceptable rate |
+| PostgreSQL | Connection utilization returns below 85%, if saturation caused the incident |
+| Event freshness | Oldest pending `PaymentRecorded` event age is at most 60 seconds |
+| Consistency | All affected payment outcomes are reconciled with invoice state |
+| Documentation | Recovery time, evidence, and follow-up owner are recorded |
 
-**Defined:** incident triggers, diagnostic steps, safe mitigation, escalation, and recovery checks.
+The 30-day SLOs in `05-slo.md` are assessed separately. Historical error-budget consumption does not disappear immediately after service recovery.
 
-**Not validated:** production alert delivery, live PostgreSQL diagnostics, real message-queue recovery, and end-to-end payment incident response.
+With very low traffic, successful synthetic checks or authorized transaction verification may be necessary because recent ratios can be inconclusive.
 
+Do not close an incident based only on a cleared alert. Confirm payment consistency and unresolved event-delivery risks.
+
+## 11. Evidence and handoff
+
+Record:
+
+- Detection, acknowledgment, mitigation, and recovery timestamps.
+- Alert name, sample counts, error ratios, and relevant durations.
+- Redacted `trace_id` references and associated error codes.
+- Dependency findings and mitigation decisions.
+- Verification evidence and unresolved risks.
+- Follow-up issue, responsible role, and acceptance criteria.
+
+The incident report in `08-incident.md` must identify simulated evidence as hypothetical.
+
+## 12. References and validation status
+
+**Related workshop evidence:** `01-journey.md`, `02-log-contract.md`, `04-metrics.md`, `05-slo.md`, `06-alerts.yml`, `06-alert-policy.md`, and `08-incident.md`.
+
+**Architecture references:** `07-api/contracts/openapi/billing-service.yaml`, `09-microservices/dependency-map.md`, and `09-microservices/communication-patterns.md`.
+
+**Defined:** Operational diagnosis, log correlation, three risk-ordered mitigations, escalation, and recovery checks.
+
+**Pending in this intermediate version:** Detailed PromQL diagnostic queries.
+
+**Not validated:** Production instrumentation, real alert delivery, deployed log search, backend payments, operational rollback, outbox recovery, and real incident response.
