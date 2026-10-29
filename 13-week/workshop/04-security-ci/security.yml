@@ -1,0 +1,67 @@
+
+# CP4 — Security CI proposal for DI LUCCA
+# Copy to .github/workflows/security.yml only after team approval.
+
+name: DI LUCCA Security CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: Detect exposed secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan with Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dependencies:
+    name: Audit Billing dependencies
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./dlc-billing-api
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Audit dependencies
+        run: mvn -B org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=7
+
+  authorization:
+    name: Negative Billing authorization test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: python -m pip install pytest requests
+
+      - name: Run negative authorization test
+        env:
+          BILLING_BASE_URL: ${{ vars.BILLING_BASE_URL }}
+        run: python -m pytest 13-week/workshop/04-security-ci/test_negative_authz.py -v
