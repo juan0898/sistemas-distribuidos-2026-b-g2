@@ -1,3 +1,4 @@
+
 <!-- HU-STATUS TEMPLATE - do NOT remove the <!-- ... --> markers or the table headers.
      Your weekly grade is read AUTOMATICALLY from this file:
        13-week/hu-status/README.md  (inside YOUR fork). English. -->
@@ -8,7 +9,7 @@
 - FULL_NAME: Juan Diego Mora Alvarado
 - GITHUB_USER: juan0898
 - TEAM: DI LUCCA Dental Care & Technology
-- SPRINT_GOAL: Identify and document security threats at the API Gateway to Billing service trust boundary, prioritize security improvements, and propose automated security checks.
+- SPRINT_GOAL: Complete the API Gateway to Billing threat model, refine security backlog stories, document negative test execution, and define an implementation plan.
 <!-- CONFIG-END -->
 
 ## 1. User stories worked this week
@@ -21,31 +22,39 @@
 
 ## 2. My individual contribution
 
-- Claimed the inbound `dlc-api-gateway` to `dlc-billing-api` trust boundary in issue #129.
-- Documented the DI LUCCA attack surface, assets, entry points, and trust boundaries using Mermaid.
-- Analyzed six STRIDE threats affecting Billing and prioritized them according to likelihood and impact.
-- Documented proposed mitigations and residual risks in the security threat model.
-- Opened PR #132 for the completed Billing STRIDE analysis.
-- Created three security backlog issues with measurable acceptance criteria and automated test requirements.
-- Proposed a Security CI workflow including Gitleaks, OWASP Dependency-Check, and negative authentication tests.
-- Added Python tests for requests without authentication and requests with invalid Bearer tokens.
-- Reviewed a teammate's Clinical Service threat model and published a technical comment about patient assignment authorization.
+- Claimed the inbound `dlc-api-gateway` to Billing trust boundary in issue #129.
+- Documented Billing assets, entry points, and trust boundaries using Mermaid.
+- Identified six STRIDE threats and prioritized them by likelihood and impact.
+- Opened STRIDE completion PR #132 in the DI LUCCA documentation repository.
+- Addressed peer feedback about unauthorized manual charges on unassigned consultations.
+- Refined the three security backlog issues with testable acceptance criteria.
+- Added all three security issues to the DI LUCCA project backlog.
+- Proposed CI checks using Gitleaks, OWASP Dependency-Check, and pytest.
+- Created negative authentication tests for missing and invalid Bearer tokens.
+- Executed the tests locally and documented the actual skipped results.
+- Investigated Billing backend availability using Docker and the API repository.
+- Reviewed a teammate's Clinical threat model and published technical feedback.
+- Recorded the library visit and consulted Pressman's software engineering book.
+- Prepared an individual implementation plan covering authorization, data integrity, and security testing.
 
 ## 3. Blockers and risks
 
-- The three security issues have not yet been confirmed in the DI LUCCA GitHub Project backlog because project selection was unavailable.
-- The Billing authorization tests require a running, isolated test environment; execution has not yet been verified.
-- The Security CI proposal requires confirmation of the actual Billing build configuration before activation.
-- The library visit registration time, publication year, and library call number are still pending verification.
-- PR #132 remains open for team review.
+- The Billing API repository does not currently provide an executable service on the inspected branches.
+- Both negative authentication tests were skipped because `BILLING_BASE_URL` was not configured.
+- HTTP 401 and HTTP 403 behavior has not yet been validated against a running Billing backend.
+- The proposed `security.yml` workflow has not been activated or independently validated.
+- The three security backlog stories describe pending controls, not implemented features.
+- STRIDE completion PR #132 remains open and has not been merged.
 
 ## 4. Plan for next week
 
-- Coordinate the assignment of security issues #134, #135, and #136 to the team backlog.
-- Validate the proposed negative authentication tests against the Billing test environment.
-- Extend the automated tests to verify administrator-only price creation.
-- Address review feedback on PR #132.
-- Coordinate integration of approved security controls into Billing CI.
+- Coordinate implementation of the P0 authorization controls in Billing.
+- Verify dentist assignment before accepting manual charges.
+- Prepare an isolated, executable Billing test environment.
+- Rerun negative authentication and authorization tests against the actual service.
+- Validate the proposed Security CI workflow and confirm the Billing build configuration.
+- Continue addressing review feedback and coordinate approval of STRIDE PR #132.
+- Implement financial input validation and auditability according to backlog priorities.
 
 ## 5. Compliance self-check
 
@@ -62,10 +71,13 @@
 - Attack surface: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/blob/main/13-week/workshop/01-attack-surface.md
 - Initial STRIDE PR: https://github.com/code-corhuila/dlc-docs/pull/131
 - STRIDE completion PR: https://github.com/code-corhuila/dlc-docs/pull/132
-- Security issue P0: https://github.com/code-corhuila/dlc-docs/issues/134
-- Security issue P1 (Spoofing): https://github.com/code-corhuila/dlc-docs/issues/135
-- Security issue P1 (Tampering): https://github.com/code-corhuila/dlc-docs/issues/136
-- Security CI commit: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/b742774
-- Security CI documentation commit: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/8ad0595
+- P0 security issue: https://github.com/code-corhuila/dlc-docs/issues/134
+- P1 Spoofing issue: https://github.com/code-corhuila/dlc-docs/issues/135
+- P1 Tampering issue: https://github.com/code-corhuila/dlc-docs/issues/136
+- Security CI proposal: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/b742774
+- Security CI documentation: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/8ad0595
 - Peer review comment: https://github.com/code-corhuila/dlc-docs/pull/133#issuecomment-6500535596
+- CP6 STRIDE review changes: https://github.com/code-corhuila/dlc-docs/pull/132
+- CP7 backlog refinement: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/5febd5c
+- CP8 test execution report: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/commit/1448efb
 - Workshop README: https://github.com/juan0898/sistemas-distribuidos-2026-b-g2/blob/main/13-week/workshop/README.md
