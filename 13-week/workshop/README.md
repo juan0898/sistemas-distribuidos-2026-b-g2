@@ -10,8 +10,8 @@
 - BOUNDARY: dlc-api-gateway -> dlc-billing-api (inbound)
 - CLAIM_ISSUE: https://github.com/code-corhuila/dlc-docs/issues/129
 - REFLECTION_DOC: https://docs.google.com/document/d/1Gx30bxBLFK9r5wK70-q0q5hgvqKHmeJs_yrLKngJ32E/edit
-- LIBRARY_BOOK: Roger S. Pressman, Software Engineering: A Practitioner's Approach (Ingeniería del software: Un enfoque práctico), 6th edition, McGraw-Hill, year and library call number pending verification
-- LIBRARY_RECORD_TIME: PENDING
+- LIBRARY_BOOK: Roger S. Pressman, Ingeniería del software: Un enfoque práctico, 6th edition, McGraw-Hill, 2005, Biblioteca CORHUILA Prado Alto, call number 005.3 P727 Ej. 1, Section 20.8, p. 630
+- LIBRARY_RECORD_TIME: 2026-10-29 08:20 (America/Bogota)
 - STORIES: https://github.com/code-corhuila/dlc-docs/issues/134, https://github.com/code-corhuila/dlc-docs/issues/135, https://github.com/code-corhuila/dlc-docs/issues/136
 <!-- CONFIG-END -->
 
