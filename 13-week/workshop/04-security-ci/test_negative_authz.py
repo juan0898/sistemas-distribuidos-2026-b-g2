@@ -17,7 +17,7 @@ PROTECTED_PATH = "/api/v1/procedure-prices"
 def billing_url():
     """Require an explicit non-production Billing test environment."""
     if not BASE_URL:
-        pytest.skip(
+        pytest.fail(
             "BILLING_BASE_URL is not configured; "
             "start an isolated Billing test environment first."
         )
